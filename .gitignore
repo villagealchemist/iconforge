@@ -1,0 +1,33 @@
+# macOS
+.DS_Store
+.AppleDouble
+.LSOverride
+
+# Icon previews
+Icon?
+
+# Temp test files
+tests/tmp*
+tmp/
+
+# Logs
+*.log
+
+# Editor / IDE files
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+
+# System
+*.bak
+.env
+.env.*
+
+# Shell history or session
+.session
+.history
+
+# Homebrew formulas (if auto-generated)
+*.rb
