@@ -12,7 +12,7 @@ mkdir -p "$TEST_DIR"
 safe1=$(basename "$TEST_IMAGE1" | sed 's/\.[^.]*$//' | tr -cd '[:alnum:]_-')
 safe2=$(basename "$TEST_IMAGE2" | sed 's/\.[^.]*$//' | tr -cd '[:alnum:]_-')
 
-assert_file_exists "$TEST_DIR/$safe1/$safe1.icns"
-assert_file_exists "$TEST_DIR/$safe2/$safe2.icns"
+assert_file_exists "$TEST_DIR/$safe1.icns"
+assert_file_exists "$TEST_DIR/$safe2.icns"
 
 echo "🎉 $TEST_NAME passed"

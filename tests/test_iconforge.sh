@@ -5,8 +5,8 @@ TEST_NAME="basic single image with override"
 source tests/test_common.sh
 
 OVERRIDE="MyIcon"
-ICNS="$TEST_DIR/$OVERRIDE/$OVERRIDE.icns"
-PNG="$TEST_DIR/$OVERRIDE/$OVERRIDE.png"
+ICNS="$TEST_DIR/$OVERRIDE.icns"
+PNG="$TEST_DIR/$OVERRIDE.png"
 
 echo "🧪 Test: $TEST_NAME"
 
