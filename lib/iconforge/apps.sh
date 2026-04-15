@@ -15,7 +15,7 @@ apply_help() {
 Usage:
   iconforge apply <app> --icon <file.icns> [--nuke] [--force-asset] [--dry-run]
 
-`apply` performs app-bundle mutation. Asset-catalog-backed apps are
+\`apply\` performs app-bundle mutation. Asset-catalog-backed apps are
 refused by default. Use --force-asset to override.
 EOF
 }

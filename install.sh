@@ -7,7 +7,7 @@ RUNTIME_DIR="/usr/local/lib/iconforge"
 BIN_DIR="/usr/local/bin"
 BIN_TARGET="$BIN_DIR/iconforge"
 PROCESSOR_SOURCE="$SCRIPT_DIR/iconforge-processor/iconforge-processor"
-MAIN_SOURCE="$SCRIPT_DIR/iconforge"
+MAIN_SOURCE="$SCRIPT_DIR/iconforge.sh"
 
 [[ -x "$MAIN_SOURCE" ]] || { echo "Error: iconforge entrypoint not found at $MAIN_SOURCE"; exit 1; }
 [[ -x "$PROCESSOR_SOURCE" ]] || { echo "Error: iconforge-processor not found at $PROCESSOR_SOURCE. Run 'make build' first."; exit 1; }
