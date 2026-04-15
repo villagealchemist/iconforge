@@ -31,3 +31,16 @@ tmp/
 
 # Homebrew formulas (if auto-generated)
 *.rb
+
+# Local environment overrides
+.iconforge.local.env
+.env.local
+tests/.iconforge.test.env
+
+# Build artifacts
+/iconforge-processor/iconforge-processor
+/iconforge-processor-*
+
+# Test artifacts
+tmp/
+tests/tmp*

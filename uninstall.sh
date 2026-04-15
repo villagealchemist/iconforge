@@ -1,28 +1,26 @@
-#!/bin/zsh
+#!/usr/bin/env bash
 
-# Uninstall script for iconforge
-# Removes the global command symlink and makes cleanup easy.
+set -euo pipefail
 
-TARGET_PATH="/usr/local/bin/iconforge"
-SCRIPT_PATH="$(readlink "$TARGET_PATH")"
+BIN_TARGET="/usr/local/bin/iconforge"
+RUNTIME_DIR="/usr/local/lib/iconforge"
+removed=0
 
-# Remove global symlink
-if [[ -L "$TARGET_PATH" ]]; then
-  echo "🗑 Removing global command: $TARGET_PATH"
-  sudo rm "$TARGET_PATH"
-else
-  echo "⚠️ No global command found at $TARGET_PATH"
+if [[ -f "$BIN_TARGET" ]]; then
+  echo "Removing $BIN_TARGET"
+  rm -f "$BIN_TARGET"
+  removed=$((removed + 1))
 fi
 
-# Optionally, prompt to remove local files
-read -p "🗑️  Also remove local script files at $SCRIPT_PATH? [y/N] " CONFIRM
-if [[ "$CONFIRM" =~ ^[Yy]$ ]]; then
-  if [[ -f "$SCRIPT_PATH" ]]; then
-    echo "🗑 Removing local script: $SCRIPT_PATH"
-    rm -f "$SCRIPT_PATH"
-  else
-    echo "⚠️ Local script not found: $SCRIPT_PATH"
-  fi
+if [[ -d "$RUNTIME_DIR" ]]; then
+  echo "Removing $RUNTIME_DIR"
+  rm -rf "$RUNTIME_DIR"
+  removed=$((removed + 1))
 fi
 
-echo "✅ Uninstall complete."
+if [[ "$removed" -eq 0 ]]; then
+  echo "No iconforge installation found"
+  exit 1
+fi
+
+echo "Uninstall complete"

@@ -2,131 +2,103 @@
   <img src="assets/iconforge_logo.png" alt="iconforge logo" width="200"/>
 </p>
 
-**Convert any image into a macOS `.icns` icon bundle in seconds — from the terminal.**
+`iconforge` is a macOS icon workflow CLI. It forges `.icns` files from source images, inspects how an app bundle declares its icon, applies a custom icon into an app bundle, restores the original icon backup, and clears the user-level icon caches that usually need to be refreshed afterward.
 
-Built with love by [@villagealchemist](https://github.com/villagealchemist)
-
-MIT Licensed • Type-safe Bash • 100% test-covered
-
----
-
-## ⚡️ Features
-
-* 🔧 Convert `.png`, `.jpg`, `.jpeg`, `.webp`, `.gif`, `.tiff`, `.heic` into `.icns`
-* 📦 Generates Apple-compatible `.iconset` and `.icns` from any image
-* 🖼 Recursively batch convert folders
-* 🗂 Optional PNG preservation with `--keep-png`
-* 📁 Custom output directories
-* 📜 Interactive CLI prompts if no args given
-* ✅ Full test suite with `make test`
-* 🧰 Developer tooling via `Makefile`
-* 🔪 Written in POSIX-compatible Bash (macOS-safe)
-
----
-
-## 🚀 Installation
-
-Run the install script:
+## Commands
 
 ```bash
-make install
+iconforge forge <input> [output_name] [options]
+iconforge inspect <app>
+iconforge apply <app> --icon <file.icns> [--nuke] [--force-asset] [--dry-run]
+iconforge restore <app> [--nuke] [--dry-run]
+iconforge nuke [app] [--dry-run]
 ```
 
-This:
-
-* Installs `bin/iconforge.sh` to `/usr/local/bin/iconforge`
-* Makes it executable
-* Verifies system dependencies (`sips`, `iconutil`, `find`)
-* Optionally installs them if missing
-
-To uninstall:
+Legacy forge-style usage still works:
 
 ```bash
-make uninstall
+iconforge logo.png -o dist/icons
 ```
 
----
+That is routed internally to `iconforge forge`.
 
-## 🧪 Usage
-For full CLI flag reference and examples, see the [Usage Guide](./docs/usage.md).
+## Typical flows
+
+Forge a new icon:
 
 ```bash
-iconforge [options] <input_image|directory> [output_name]
+iconforge forge assets/logo.png BrandMark -o dist
 ```
 
-### Options
-
-| Flag                | Description                                       |
-| ------------------- | ------------------------------------------------- |
-| `-o`, `--output`    | Output directory (default: current directory)     |
-| `-k`, `--keep-png`  | Keep the resized `.png` alongside the `.icns`     |
-| `-r`, `--recursive` | Recursively scan a directory for supported images |
-| `-h`, `--help`      | Show help message                                 |
-| `--version`         | Show installed iconforge version                  |
-
-### Interactive Mode
-
-If run without arguments, iconforge will guide you through:
-
-```
-🔧 Interactive mode
-Input file(s) or directory:
-Output directory [./]:
-Keep intermediate PNG? (y/N):
-Recursive scan (for folders)? (y/N):
-```
-
----
-
-## 📁 Example
+Inspect an app bundle before touching it:
 
 ```bash
-iconforge assets/logo.png -o dist/icons -k
+iconforge inspect "/Applications/Visual Studio Code.app"
 ```
 
-Creates:
-
-```
-dist/icons/logo/
-🔹 logo.icns
-🔹 logo.png
-```
-
----
-
-## 🔎 Developer Commands
+Apply a custom icon, re-sign the app, and refresh caches:
 
 ```bash
-make test           # Run full test suite
-make test-verbose   # Show all logs during tests
-make bump           # Prompt and update version in iconforge.sh
-make release        # Tag and push a release (no file changes)
-make clean          # Remove all tmp/ test artifacts
-make install        # Install iconforge globally
-make uninstall      # Uninstall the script
+iconforge apply "/Applications/MyApp.app" --icon dist/BrandMark.icns --nuke
 ```
 
----
-
-## 🔬 Tests
-
-All tests live in `/tests`. Covered cases include:
-
-* Single image conversion
-* Recursive batch folders
-* Duplicate filename rejections
-* Invalid input handling
-* Unwritable output paths
-* Integration with version overrides
-
-Run them all:
+Restore the original backed-up icon:
 
 ```bash
+iconforge restore "/Applications/MyApp.app" --nuke
+```
+
+Clear icon caches directly:
+
+```bash
+iconforge nuke
+```
+
+## What `apply` does
+
+`apply` is the app-bundle mutation path:
+
+1. Resolve the app bundle and target loose `.icns`
+2. Back up the original icon as `*_ugly.icns` if that backup does not exist yet
+3. Replace the bundle icon with your supplied `.icns`
+4. Touch the app bundle and `Info.plist`
+5. Re-sign the bundle with ad hoc signing by default
+6. Optionally clear icon caches with `--nuke`
+
+Use `--dry-run` to preview those actions without changing files.
+
+## Asset catalog limitations
+
+Many modern apps, especially Chromium/Electron-style bundles, advertise their icon through `CFBundleIconName` plus `Assets.car`. In that configuration, replacing a loose `.icns` often does nothing visible.
+
+`iconforge inspect` calls this out explicitly. `iconforge apply` refuses by default when an app looks asset-catalog-backed. If you still want to try the loose replacement path anyway, pass `--force-asset`.
+
+That override only means “attempt the bundle replacement anyway”. It does not guarantee the app will display the new icon.
+
+## `nuke` behavior
+
+`iconforge nuke` focuses on the practical user-level steps that usually matter on macOS:
+
+1. Remove user-accessible icon cache files under `~/Library/Caches` and `/private/var/folders/...`
+2. Touch the target app bundle when one is supplied
+3. Restart Finder, Dock, and `iconservicesagent`
+4. Refresh Quick Look cache when `qlmanage` is available
+
+It does not use privileged deletion or destructive system-wide resets.
+
+## Safety notes
+
+- Modifying app bundles can invalidate signatures until the bundle is re-signed.
+- Ad hoc signing is the default after `apply` and `restore`; use `--no-resign` only if you know you want to handle signing yourself.
+- System apps and managed apps may reject modification or be restored by the OS or MDM tooling.
+- Asset-catalog-backed apps may ignore loose `.icns` replacement even when the file copy succeeds.
+
+## Development
+
+```bash
+make build
 make test
+make lint
 ```
 
-## 📄 License
-
-MIT © [villagealchemist](https://github.com/villagealchemist)
-
----
+The Go binary in `iconforge-processor/` remains responsible for image decoding, PNG conversion, and resizing. The macOS bundle operations stay in shell.

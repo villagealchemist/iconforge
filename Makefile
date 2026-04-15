@@ -1,82 +1,88 @@
-# Makefile for iconforge – https://github.com/villagealchemist/iconforge
+# Makefile for iconforge
 
-# Paths
-BIN_DIR := bin
+PROCESSOR_DIR := iconforge-processor
+PROCESSOR_BIN := iconforge-processor
+SCRIPT_NAME := iconforge
 TEST_DIR := tests
-SRC := $(BIN_DIR)/iconforge.sh
 
-# Default target
 .PHONY: all
-all: help
+all: build
 
-# Help text
 .PHONY: help
 help:
-	@echo "🛠  iconforge Makefile"
+	@echo "iconforge Makefile"
 	@echo ""
 	@echo "Available targets:"
-	@echo "  make install       Install iconforge globally (via ./install.sh)"
-	@echo "  make uninstall     Uninstall iconforge (via ./uninstall.sh)"
-	@echo "  make test          Run the full test suite"
-	@echo "  make test-verbose  Run all tests with full output"
-	@echo "  make clean         Remove all tmp/ test artifacts"
-	@echo "  make lint          Run basic lint checks"
-	@echo "  make version       Show the script version"
-	@echo ""
+	@echo "  make build            Build the bundled Go image processor"
+	@echo "  make build-all        Build processor binaries for multiple platforms"
+	@echo "  make install          Install iconforge into /usr/local"
+	@echo "  make uninstall        Remove the installed runtime"
+	@echo "  make test             Run shell + Go tests"
+	@echo "  make test-verbose     Run shell tests inline"
+	@echo "  make test-go          Run Go tests only"
+	@echo "  make lint             Run shellcheck/go vet/go fmt"
+	@echo "  make clean            Remove build artifacts and tmp files"
+	@echo "  make version          Print iconforge version"
 
-# Version output
-.PHONY: version
-version:
-	@bash $(SRC) --version
+.PHONY: deps
+deps:
+	@cd $(PROCESSOR_DIR) && go mod tidy
 
-# Install + Uninstall
-.PHONY: install uninstall
-install:
+.PHONY: build
+build: deps
+	@echo "Building $(PROCESSOR_BIN)..."
+	@cd $(PROCESSOR_DIR) && go build -ldflags="-s -w" -o $(PROCESSOR_BIN)
+
+.PHONY: build-all
+build-all: deps
+	@cd $(PROCESSOR_DIR) && \
+		GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o ../$(PROCESSOR_BIN)-darwin-amd64 && \
+		GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o ../$(PROCESSOR_BIN)-darwin-arm64 && \
+		GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o ../$(PROCESSOR_BIN)-linux-amd64
+
+.PHONY: install
+install: build
 	@./install.sh
 
+.PHONY: uninstall
 uninstall:
 	@./uninstall.sh
 
-# Run all tests with silent success logs
+.PHONY: version
+version:
+	@./$(SCRIPT_NAME) --version
+
+.PHONY: test-go
+test-go:
+	@cd $(PROCESSOR_DIR) && go test -v ./...
+
 .PHONY: test
-test:
-	@echo "🧪 Running test suite..."
+test: build test-go
 	@bash $(TEST_DIR)/test_all.sh
 
-# Verbose mode: show logs inline
 .PHONY: test-verbose
-test-verbose:
-	@echo "🧪 Running test suite (verbose)..."
+test-verbose: build
 	@for test in $(TEST_DIR)/test_*.sh; do \
 		case $$test in \
-			*test_common.sh|*test_all.sh) continue ;; \
+			*test_all.sh|*test_common.sh) continue ;; \
 		esac; \
-		echo "▶️  $$test"; \
+		echo "Running $$test"; \
 		bash $$test; \
 		echo ""; \
 	done
 
-# Remove temp files
+.PHONY: lint
+lint:
+	@if command -v shellcheck >/dev/null 2>&1; then \
+		shellcheck $(SCRIPT_NAME) iconforge.sh lib/iconforge/*.sh tests/test_*.sh; \
+	else \
+		echo "shellcheck not installed; skipping shell lint"; \
+	fi
+	@cd $(PROCESSOR_DIR) && go vet ./...
+	@cd $(PROCESSOR_DIR) && go fmt ./...
+
 .PHONY: clean
 clean:
-	@echo "🧹 Cleaning test artifacts..."
-	@rm -rf $(TEST_DIR)/tmp* tmp/
-
-# Bump version inside the script (but don't commit or tag)
-.PHONY: bump
-bump:
-	@read -p "Enter new version (e.g. 1.1.0): " RAW_VERSION; \
-	FILE=bin/iconforge.sh; \
-	echo "🔧 Updating version in $$FILE to $$RAW_VERSION..."; \
-	sed -i '' "s/^VERSION=.*/VERSION=\"$$RAW_VERSION\"/" $$FILE; \
-	echo "✅ Version bumped to $$RAW_VERSION (not committed)"
-
-# Tag and push the current commit as a release
-.PHONY: release
-release:
-	@read -p "Enter version tag (e.g. v1.1.0): " VERSION; \
-	[[ "$$VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$$ ]] || { echo "❌ Invalid tag format"; exit 1; }; \
-	git diff --quiet || echo "⚠️ Warning: working directory has uncommitted changes"; \
-	git tag -a "$$VERSION" -m "Release $$VERSION"; \
-	git push origin "$$VERSION"; \
-	echo "✅ Tagged and pushed $$VERSION"
+	@rm -rf tmp tests/tmp*
+	@rm -f $(PROCESSOR_DIR)/$(PROCESSOR_BIN) $(PROCESSOR_BIN)-*
+	@cd $(PROCESSOR_DIR) && go clean
