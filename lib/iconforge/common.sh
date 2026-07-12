@@ -18,10 +18,12 @@ ICONFORGE_PROCESSOR="${ICONFORGE_PROCESSOR:-$ICONFORGE_ROOT/iconforge-processor/
 PLIST_BUDDY_BIN="${ICONFORGE_PLIST_BUDDY_BIN:-/usr/libexec/PlistBuddy}"
 PLUTIL_BIN="${ICONFORGE_PLUTIL_BIN:-/usr/bin/plutil}"
 CODESIGN_BIN="${ICONFORGE_CODESIGN_BIN:-codesign}"
+FILEICON_BIN="${ICONFORGE_FILEICON_BIN:-fileicon}"
 ICONUTIL_BIN="${ICONFORGE_ICONUTIL_BIN:-iconutil}"
 TOUCH_BIN="${ICONFORGE_TOUCH_BIN:-touch}"
 KILLALL_BIN="${ICONFORGE_KILLALL_BIN:-killall}"
 RM_BIN="${ICONFORGE_RM_BIN:-rm}"
+CP_BIN="${ICONFORGE_CP_BIN:-cp}"
 
 CONFIG_FILE="$HOME/.iconforgerc"
 PROJECT_CONFIG="$ICONFORGE_ROOT/.iconforge.env"
@@ -120,6 +122,29 @@ require_tool() {
   fi
 }
 
+require_nonempty_path() {
+  local label="$1"
+  local path_value="${2:-}"
+
+  [[ -n "$path_value" ]] || fail "$label must not be empty" || return 1
+}
+
+require_existing_file_path() {
+  local label="$1"
+  local path_value="${2:-}"
+
+  require_nonempty_path "$label" "$path_value" || return 1
+  [[ -f "$path_value" ]] || fail "$label not found: $path_value" || return 1
+}
+
+require_app_bundle_path() {
+  local app_path="${1:-}"
+
+  require_nonempty_path "App bundle path" "$app_path" || return 1
+  [[ -d "$app_path" ]] || fail "App bundle not found: $app_path" || return 1
+  [[ -f "$app_path/Contents/Info.plist" ]] || fail "App bundle is missing Contents/Info.plist: $app_path" || return 1
+}
+
 require_processor() {
   [[ -x "$ICONFORGE_PROCESSOR" ]] || fail "iconforge-processor not found at $ICONFORGE_PROCESSOR"
 }
@@ -187,7 +212,7 @@ resolve_app_path() {
   for candidate in "$PWD/$normalized" "$HOME/Applications/$normalized" "/Applications/$normalized" "/System/Applications/$normalized"; do
     if [[ -d "$candidate" && -f "$candidate/Contents/Info.plist" ]]; then
       candidate="$(realpath "$candidate")"
-      if _dedupe_push "$candidate" "${matches[@]}"; then
+      if _dedupe_push "$candidate" "${matches[@]+"${matches[@]}"}"; then
         matches+=("$candidate")
       fi
     fi
@@ -198,7 +223,7 @@ resolve_app_path() {
     while IFS= read -r match; do
       [[ -n "$match" ]] || continue
       match="$(realpath "$match")"
-      if _dedupe_push "$match" "${matches[@]}"; then
+      if _dedupe_push "$match" "${matches[@]+"${matches[@]}"}"; then
         matches+=("$match")
       fi
     done < <(find "$root" -maxdepth 2 -type d -iname "$normalized" -print 2>/dev/null || true)
@@ -248,7 +273,7 @@ resolve_icon_target_from_candidates() {
   local candidate
   local normalized
 
-  for candidate in "${candidates[@]}"; do
+  for candidate in "${candidates[@]+"${candidates[@]}"}"; do
     [[ -n "$candidate" ]] || continue
     while IFS= read -r normalized; do
       [[ -n "$normalized" ]] || continue
@@ -326,7 +351,7 @@ inspect_app_metadata() {
     done
   fi
 
-  resolve_icon_target_from_candidates "$APP_RESOURCES_DIR" "${candidate_names[@]}" || true
+  resolve_icon_target_from_candidates "$APP_RESOURCES_DIR" "${candidate_names[@]+"${candidate_names[@]}"}" || true
 }
 
 print_icon_source_summary() {
@@ -342,6 +367,7 @@ print_icon_source_summary() {
 resign_app_bundle() {
   local app_path="$1"
 
+  require_app_bundle_path "$app_path" || return 1
   require_tool "$CODESIGN_BIN" "Missing required tool: codesign"
   run_cmd "$CODESIGN_BIN" --force --deep --sign - "$app_path"
 }
@@ -350,6 +376,7 @@ touch_app_bundle() {
   local app_path="$1"
   local plist_path="$app_path/Contents/Info.plist"
 
+  require_app_bundle_path "$app_path" || return 1
   run_cmd "$TOUCH_BIN" "$app_path"
   [[ -f "$plist_path" ]] && run_cmd "$TOUCH_BIN" "$plist_path"
 }
@@ -359,6 +386,8 @@ find_restore_backup() {
     printf '%s\n' "$APP_ICON_BACKUP"
     return 0
   fi
+
+  [[ -n "${APP_RESOURCES_DIR:-}" ]] || return 1
 
   local backups=()
   local match

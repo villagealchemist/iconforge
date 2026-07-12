@@ -13,7 +13,7 @@ EOF
 apply_help() {
   cat <<EOF
 Usage:
-  iconforge apply <app> --icon <file.icns> [--nuke] [--force-asset] [--dry-run]
+  iconforge apply <app> --icon <file.icns> [--strategy <auto|internal-icns|fileicon>] [--nuke] [--force-asset] [--dry-run]
 
 \`apply\` performs app-bundle mutation. Asset-catalog-backed apps are
 refused by default. Use --force-asset to override.
@@ -98,29 +98,14 @@ cmd_inspect() {
   print_inspect_summary
 }
 
-copy_icon_into_bundle() {
-  local source_icns="$1"
-  local target_icns="$2"
-
-  [[ -f "$source_icns" ]] || fail "Icon file not found: $source_icns" || return 1
-  [[ "$source_icns" == *.icns ]] || fail "Icon file must be a .icns file: $source_icns" || return 1
-  [[ -n "$target_icns" ]] || fail "Could not resolve target icon file inside app bundle" || return 1
-
-  if [[ ! -f "$APP_ICON_BACKUP" ]]; then
-    run_cmd cp "$target_icns" "$APP_ICON_BACKUP" || return 1
-  fi
-
-  run_cmd cp "$source_icns" "$target_icns" || return 1
-}
-
 cmd_apply() {
   local app_arg=""
   local icon_file=""
+  local strategy_arg="auto"
+  local selected_strategy=""
   local do_nuke=false
   local force_asset=false
   local no_resign=false
-  local replacement_checksum=""
-  local target_checksum=""
   local nuke_args=()
 
   [[ $# -gt 0 ]] || { apply_help; return 1; }
@@ -129,6 +114,10 @@ cmd_apply() {
     case "$1" in
       --icon)
         icon_file="$2"
+        shift 2
+        ;;
+      --strategy)
+        strategy_arg="$2"
         shift 2
         ;;
       --nuke)
@@ -169,28 +158,14 @@ cmd_apply() {
   [[ -n "$icon_file" ]] || fail "apply requires --icon <file.icns>" || return 1
 
   inspect_app_metadata "$app_arg" || return 1
+  selected_strategy="$(select_apply_strategy "$strategy_arg")" || return 1
 
-  if [[ "$APP_USES_ASSET_CATALOG" == true && "$force_asset" != true ]]; then
-    warn "This app appears asset-catalog backed."
-    warn "Replacing $APP_ICON_TARGET may have no visible effect."
-    fail "Refusing icon replacement without --force-asset" || return 1
-  fi
-
-  [[ -n "$APP_ICON_TARGET" ]] || fail "No loose .icns target could be resolved for $APP_PATH" || return 1
-
-  replacement_checksum="$(shasum -a 256 "$icon_file" | awk '{print $1}')"
-  if [[ -f "$APP_ICON_TARGET" ]]; then
-    target_checksum="$(shasum -a 256 "$APP_ICON_TARGET" | awk '{print $1}')"
-  fi
-
-  if [[ -n "$target_checksum" && "$replacement_checksum" == "$target_checksum" ]]; then
-    note "Target icon already matches $icon_file"
-  fi
-
-  copy_icon_into_bundle "$icon_file" "$APP_ICON_TARGET" || return 1
-  touch_app_bundle "$APP_PATH" || return 1
-  if [[ "$no_resign" != true ]]; then
-    resign_app_bundle "$APP_PATH" || return 1
+  apply_icon_with_strategy "$selected_strategy" "$icon_file" "$force_asset" || return 1
+  if strategy_requires_bundle_refresh "$selected_strategy"; then
+    touch_app_bundle "$APP_PATH" || return 1
+    if [[ "$no_resign" != true ]]; then
+      resign_app_bundle "$APP_PATH" || return 1
+    fi
   fi
   if [[ "$do_nuke" == true ]]; then
     [[ "$ICONFORGE_DRY_RUN" == true ]] && nuke_args+=("--dry-run")
@@ -198,14 +173,18 @@ cmd_apply() {
   fi
 
   if [[ "$ICONFORGE_DRY_RUN" == true ]]; then
+    printf 'Strategy: %s\n' "$selected_strategy"
     printf 'Planned icon target: %s\n' "$APP_ICON_TARGET"
     printf 'Planned backup path: %s\n' "$APP_ICON_BACKUP"
-    [[ "$no_resign" == true ]] || printf 'Planned re-sign: %s\n' "$APP_PATH"
+    if strategy_requires_bundle_refresh "$selected_strategy" && [[ "$no_resign" != true ]]; then
+      printf 'Planned re-sign: %s\n' "$APP_PATH"
+    fi
     [[ "$do_nuke" == true ]] && printf 'Planned cache refresh: yes\n'
   else
+    printf 'Strategy: %s\n' "$selected_strategy"
     printf 'Applied icon: %s\n' "$APP_ICON_TARGET"
     printf 'Backup icon: %s\n' "$APP_ICON_BACKUP"
-    if [[ "$no_resign" != true ]]; then
+    if strategy_requires_bundle_refresh "$selected_strategy" && [[ "$no_resign" != true ]]; then
       printf 'Re-signed: %s\n' "$APP_PATH"
     fi
     if [[ "$do_nuke" == true ]]; then
@@ -267,7 +246,9 @@ cmd_restore() {
     APP_ICON_BACKUP="$backup_file"
   fi
 
-  run_cmd cp "$backup_file" "$APP_ICON_TARGET" || return 1
+  require_existing_file_path "Backup icon file" "$backup_file" || return 1
+  require_nonempty_path "Restore icon target path" "$APP_ICON_TARGET" || return 1
+  run_cmd "$CP_BIN" "$backup_file" "$APP_ICON_TARGET" || return 1
   touch_app_bundle "$APP_PATH" || return 1
   if [[ "$no_resign" != true ]]; then
     resign_app_bundle "$APP_PATH" || return 1

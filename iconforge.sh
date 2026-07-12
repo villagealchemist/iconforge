@@ -13,6 +13,9 @@ ICONFORGE_ROOT="$SCRIPT_DIR"
 
 source "$SCRIPT_DIR/lib/iconforge/common.sh"
 source "$SCRIPT_DIR/lib/iconforge/forge.sh"
+source "$SCRIPT_DIR/lib/iconforge/strategy_internal_icns.sh"
+source "$SCRIPT_DIR/lib/iconforge/strategy_fileicon.sh"
+source "$SCRIPT_DIR/lib/iconforge/strategy.sh"
 source "$SCRIPT_DIR/lib/iconforge/apps.sh"
 
 root_help() {
