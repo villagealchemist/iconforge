@@ -18,3 +18,7 @@ trap 'cleanup || true' EXIT
 assert_file_exists() {
   [[ -f "$1" ]] && echo "✅ $1" || { echo "❌ Missing: $1"; exit 1; }
 }
+
+assert_dir_exists() {
+  [[ -d "$1" ]] && echo "✅ $1" || { echo "❌ Missing directory: $1"; exit 1; }
+}
