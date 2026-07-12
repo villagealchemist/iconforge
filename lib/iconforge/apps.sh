@@ -13,10 +13,18 @@ EOF
 apply_help() {
   cat <<EOF
 Usage:
+  iconforge apply
+  iconforge apply --all
+  iconforge apply <managed-key>
   iconforge apply <app> --icon <file.icns> [--strategy <auto|internal-icns|fileicon>] [--nuke] [--force-asset] [--dry-run]
 
 \`apply\` performs app-bundle mutation. Asset-catalog-backed apps are
 refused by default. Use --force-asset to override.
+
+Reconciliation flags:
+      --all             Reconcile the complete managed icon library
+      --icon-root PATH  Override the managed icon library root
+      --verbose         Print per-entry reconciliation details
 EOF
 }
 
@@ -98,27 +106,358 @@ cmd_inspect() {
   print_inspect_summary
 }
 
+icon_file_checksum() {
+  local icon_file="$1"
+
+  require_existing_file_path "Icon file" "$icon_file" || return 1
+  shasum -a 256 "$icon_file" | awk '{print $1}'
+}
+
+inspected_app_icon_matches() {
+  local icon_file="$1"
+  local strategy_name="$2"
+  local replacement_checksum=""
+  local target_checksum=""
+
+  case "$strategy_name" in
+    internal-icns)
+      require_existing_file_path "Loose icon target" "$APP_ICON_TARGET" || return 1
+      replacement_checksum="$(icon_file_checksum "$icon_file")" || return 1
+      target_checksum="$(icon_file_checksum "$APP_ICON_TARGET")" || return 1
+      [[ "$replacement_checksum" == "$target_checksum" ]]
+      ;;
+    *)
+      return 1
+      ;;
+  esac
+}
+
+apply_to_inspected_app() {
+  local icon_file="$1"
+  local strategy_name="$2"
+  local force_asset="${3:-false}"
+  local no_resign="${4:-false}"
+
+  apply_icon_with_strategy "$strategy_name" "$icon_file" "$force_asset" || return 1
+
+  if strategy_requires_bundle_refresh "$strategy_name"; then
+    touch_app_bundle "$APP_PATH" || return 1
+    if [[ "$no_resign" != true ]]; then
+      resign_app_bundle "$APP_PATH" || return 1
+    fi
+  fi
+
+  return 0
+}
+
+print_explicit_apply_result() {
+  local selected_strategy="$1"
+  local do_nuke="$2"
+  local no_resign="$3"
+
+  if [[ "$ICONFORGE_DRY_RUN" == true ]]; then
+    printf 'Strategy: %s\n' "$selected_strategy"
+    printf 'Planned icon target: %s\n' "$APP_ICON_TARGET"
+    printf 'Planned backup path: %s\n' "$APP_ICON_BACKUP"
+    if strategy_requires_bundle_refresh "$selected_strategy" && [[ "$no_resign" != true ]]; then
+      printf 'Planned re-sign: %s\n' "$APP_PATH"
+    fi
+    if [[ "$do_nuke" == true ]]; then
+      printf 'Planned cache refresh: yes\n'
+    fi
+  else
+    printf 'Strategy: %s\n' "$selected_strategy"
+    printf 'Applied icon: %s\n' "$APP_ICON_TARGET"
+    printf 'Backup icon: %s\n' "$APP_ICON_BACKUP"
+    if strategy_requires_bundle_refresh "$selected_strategy" && [[ "$no_resign" != true ]]; then
+      printf 'Re-signed: %s\n' "$APP_PATH"
+    fi
+    if [[ "$do_nuke" == true ]]; then
+      printf 'Cache refresh: requested\n'
+    fi
+  fi
+
+  return 0
+}
+
+RECONCILE_LAST_STATUS=""
+RECONCILE_LAST_MESSAGE=""
+RECONCILE_LAST_CHANGED=false
+
+reconcile_reset_last_result() {
+  RECONCILE_LAST_STATUS=""
+  RECONCILE_LAST_MESSAGE=""
+  RECONCILE_LAST_CHANGED=false
+}
+
+reconcile_note_entry() {
+  local verbose="$1"
+  local key="$2"
+  local status="$3"
+  local message="${4:-}"
+
+  [[ "$verbose" == true ]] || return 0
+
+  if [[ -n "$message" ]]; then
+    printf '%s: %s (%s)\n' "$key" "$status" "$message"
+  else
+    printf '%s: %s\n' "$key" "$status"
+  fi
+}
+
+reconcile_capture_or_print_log() {
+  local verbose="$1"
+  local log_file="$2"
+
+  [[ -f "$log_file" ]] || return 0
+  if [[ "$verbose" == true ]]; then
+    cat "$log_file"
+  fi
+}
+
+reconcile_managed_entry() {
+  local icon_root="$1"
+  local key="$2"
+  local strategy_arg="$3"
+  local force_asset="$4"
+  local no_resign="$5"
+  local verbose="$6"
+  local log_file
+  local configured_strategy=""
+  local effective_strategy=""
+  local selected_strategy=""
+  local matched_app_path=""
+
+  reconcile_reset_last_result
+  log_file="$(mktemp -t iconforge-reconcile-entry.XXXXXX)"
+  trap '[[ -n "${log_file:-}" ]] && /bin/rm -f "${log_file:-}"' RETURN
+
+  resolve_icon_library_entry "$icon_root" "$key" || true
+
+  if config_is_excluded "$key"; then
+    RECONCILE_LAST_STATUS="skipped"
+    RECONCILE_LAST_MESSAGE="excluded by configuration"
+    reconcile_note_entry "$verbose" "$key" "$RECONCILE_LAST_STATUS" "$RECONCILE_LAST_MESSAGE"
+    return 0
+  fi
+
+  case "$ICON_LIBRARY_RESOLUTION_STATUS" in
+    ready)
+      ;;
+    needs-forge)
+      RECONCILE_LAST_STATUS="needs-forge"
+      RECONCILE_LAST_MESSAGE="$ICON_LIBRARY_RESOLUTION_MESSAGE"
+      reconcile_note_entry "$verbose" "$key" "$RECONCILE_LAST_STATUS" "$RECONCILE_LAST_MESSAGE"
+      return 0
+      ;;
+    ambiguous-icns|ambiguous-png|missing-icon|missing-directory)
+      RECONCILE_LAST_STATUS="failed"
+      RECONCILE_LAST_MESSAGE="$ICON_LIBRARY_RESOLUTION_MESSAGE"
+      reconcile_note_entry "$verbose" "$key" "$RECONCILE_LAST_STATUS" "$RECONCILE_LAST_MESSAGE"
+      return 0
+      ;;
+    *)
+      RECONCILE_LAST_STATUS="failed"
+      RECONCILE_LAST_MESSAGE="Unexpected library resolution status: $ICON_LIBRARY_RESOLUTION_STATUS"
+      reconcile_note_entry "$verbose" "$key" "$RECONCILE_LAST_STATUS" "$RECONCILE_LAST_MESSAGE"
+      return 0
+      ;;
+  esac
+
+  if ! match_configured_application "$key" >"$log_file" 2>&1; then
+    case "$MATCH_STATUS" in
+      excluded)
+        RECONCILE_LAST_STATUS="skipped"
+        RECONCILE_LAST_MESSAGE="$MATCH_MESSAGE"
+        ;;
+      ambiguous-name|ambiguous-partial)
+        RECONCILE_LAST_STATUS="ambiguous"
+        RECONCILE_LAST_MESSAGE="$MATCH_MESSAGE"
+        ;;
+      missing|missing-explicit-path)
+        RECONCILE_LAST_STATUS="missing-app"
+        RECONCILE_LAST_MESSAGE="$MATCH_MESSAGE"
+        ;;
+      *)
+        RECONCILE_LAST_STATUS="failed"
+        RECONCILE_LAST_MESSAGE="${MATCH_MESSAGE:-Failed to match application}"
+        ;;
+    esac
+    reconcile_note_entry "$verbose" "$key" "$RECONCILE_LAST_STATUS" "$RECONCILE_LAST_MESSAGE"
+    reconcile_capture_or_print_log "$verbose" "$log_file"
+    return 0
+  fi
+
+  matched_app_path="$(discovered_app_path "$MATCH_RECORD")"
+
+  if ! inspect_app_metadata "$matched_app_path" >"$log_file" 2>&1; then
+    RECONCILE_LAST_STATUS="failed"
+    RECONCILE_LAST_MESSAGE="Failed to inspect matched application"
+    reconcile_note_entry "$verbose" "$key" "$RECONCILE_LAST_STATUS" "$RECONCILE_LAST_MESSAGE"
+    reconcile_capture_or_print_log "$verbose" "$log_file"
+    return 0
+  fi
+
+  configured_strategy="$(config_lookup_value "$key" ICONFORGE_CONFIG_APP_STRATEGIES || true)"
+  effective_strategy="$strategy_arg"
+  if [[ "$effective_strategy" == "auto" && -n "$configured_strategy" ]]; then
+    effective_strategy="$configured_strategy"
+  fi
+
+  if ! selected_strategy="$(select_apply_strategy "$effective_strategy" 2>"$log_file")"; then
+    RECONCILE_LAST_STATUS="failed"
+    RECONCILE_LAST_MESSAGE="Strategy selection failed"
+    reconcile_note_entry "$verbose" "$key" "$RECONCILE_LAST_STATUS" "$RECONCILE_LAST_MESSAGE"
+    reconcile_capture_or_print_log "$verbose" "$log_file"
+    return 0
+  fi
+
+  if inspected_app_icon_matches "$ICON_LIBRARY_RESOLVED_ICNS" "$selected_strategy" >"$log_file" 2>&1; then
+    RECONCILE_LAST_STATUS="already-correct"
+    RECONCILE_LAST_MESSAGE="$selected_strategy"
+    reconcile_note_entry "$verbose" "$key" "$RECONCILE_LAST_STATUS" "$RECONCILE_LAST_MESSAGE"
+    return 0
+  fi
+
+  : > "$log_file"
+  if ! apply_to_inspected_app "$ICON_LIBRARY_RESOLVED_ICNS" "$selected_strategy" "$force_asset" "$no_resign" >"$log_file" 2>&1; then
+    RECONCILE_LAST_STATUS="failed"
+    RECONCILE_LAST_MESSAGE="Apply failed"
+    reconcile_note_entry "$verbose" "$key" "$RECONCILE_LAST_STATUS" "$RECONCILE_LAST_MESSAGE"
+    reconcile_capture_or_print_log "$verbose" "$log_file"
+    return 0
+  fi
+
+  RECONCILE_LAST_STATUS="applied"
+  RECONCILE_LAST_MESSAGE="$selected_strategy"
+  RECONCILE_LAST_CHANGED=true
+  reconcile_note_entry "$verbose" "$key" "$RECONCILE_LAST_STATUS" "$RECONCILE_LAST_MESSAGE"
+  return 0
+}
+
+print_reconciliation_summary() {
+  local applied="$1"
+  local already_correct="$2"
+  local missing_apps="$3"
+  local ambiguous_matches="$4"
+  local needs_forge="$5"
+  local failed="$6"
+
+  printf 'IconForge reconciliation\n\n'
+  printf 'Applied: %s\n' "$applied"
+  printf 'Already correct: %s\n' "$already_correct"
+  printf 'Missing applications: %s\n' "$missing_apps"
+  printf 'Ambiguous matches: %s\n' "$ambiguous_matches"
+  printf 'Needs forge: %s\n' "$needs_forge"
+  printf 'Failed: %s\n' "$failed"
+}
+
+cmd_apply_reconcile() {
+  local managed_key="${1:-}"
+  local cli_icon_root="${2:-}"
+  local strategy_arg="${3:-auto}"
+  local force_asset="${4:-false}"
+  local no_resign="${5:-false}"
+  local verbose="${6:-false}"
+  local icon_root=""
+  local key
+  local applied=0
+  local already_correct=0
+  local missing_apps=0
+  local ambiguous_matches=0
+  local needs_forge=0
+  local failed=0
+  local changed_any=false
+  local selected_keys=()
+
+  config_load || return 1
+  icon_root="$(resolve_icon_root "$cli_icon_root")"
+  scan_icon_library "$icon_root" || return 1
+  discover_applications
+
+  if [[ -n "$managed_key" ]]; then
+    selected_keys=("$managed_key")
+  else
+    for key in "${ICON_LIBRARY_KEYS[@]+"${ICON_LIBRARY_KEYS[@]}"}"; do
+      selected_keys+=("$key")
+    done
+  fi
+
+  if [[ "${#selected_keys[@]}" -eq 0 ]]; then
+    fail "No managed icon entries were found under $icon_root" || return 1
+  fi
+
+  for key in "${selected_keys[@]+"${selected_keys[@]}"}"; do
+    reconcile_managed_entry "$icon_root" "$key" "$strategy_arg" "$force_asset" "$no_resign" "$verbose"
+    case "$RECONCILE_LAST_STATUS" in
+      applied)
+        applied=$((applied + 1))
+        changed_any=true
+        ;;
+      already-correct)
+        already_correct=$((already_correct + 1))
+        ;;
+      missing-app)
+        missing_apps=$((missing_apps + 1))
+        ;;
+      ambiguous)
+        ambiguous_matches=$((ambiguous_matches + 1))
+        ;;
+      needs-forge)
+        needs_forge=$((needs_forge + 1))
+        ;;
+      failed)
+        failed=$((failed + 1))
+        ;;
+      skipped)
+        ;;
+    esac
+  done
+
+  if [[ "$changed_any" == true && "$ICONFORGE_DRY_RUN" != true ]]; then
+    if [[ "$verbose" == true ]]; then
+      printf 'Refreshing icon caches once after reconciliation\n'
+    fi
+    cmd_nuke >/dev/null
+  fi
+
+  print_reconciliation_summary "$applied" "$already_correct" "$missing_apps" "$ambiguous_matches" "$needs_forge" "$failed"
+
+  [[ "$failed" -eq 0 ]]
+}
+
 cmd_apply() {
   local app_arg=""
   local icon_file=""
+  local icon_flag_provided=false
+  local icon_root_arg=""
   local strategy_arg="auto"
   local selected_strategy=""
+  local apply_all=false
   local do_nuke=false
   local force_asset=false
   local no_resign=false
+  local verbose=false
   local nuke_args=()
-
-  [[ $# -gt 0 ]] || { apply_help; return 1; }
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
       --icon)
+        icon_flag_provided=true
         icon_file="$2"
         shift 2
         ;;
       --strategy)
         strategy_arg="$2"
         shift 2
+        ;;
+      --icon-root)
+        icon_root_arg="$2"
+        shift 2
+        ;;
+      --all)
+        apply_all=true
+        shift
         ;;
       --nuke)
         do_nuke=true
@@ -130,6 +469,10 @@ cmd_apply() {
         ;;
       --dry-run)
         ICONFORGE_DRY_RUN=true
+        shift
+        ;;
+      --verbose)
+        verbose=true
         shift
         ;;
       --no-resign)
@@ -154,45 +497,25 @@ cmd_apply() {
     esac
   done
 
-  [[ -n "$app_arg" ]] || fail "apply requires an app argument" || return 1
-  [[ -n "$icon_file" ]] || fail "apply requires --icon <file.icns>" || return 1
+  if [[ "$icon_flag_provided" == true ]]; then
+    [[ "$apply_all" != true ]] || fail "--all cannot be combined with --icon" || return 1
+    [[ -n "$app_arg" ]] || fail "apply requires an app argument" || return 1
+    [[ -n "$icon_file" ]] || fail "apply requires --icon <file.icns>" || return 1
 
-  inspect_app_metadata "$app_arg" || return 1
-  selected_strategy="$(select_apply_strategy "$strategy_arg")" || return 1
+    inspect_app_metadata "$app_arg" || return 1
+    selected_strategy="$(select_apply_strategy "$strategy_arg")" || return 1
 
-  apply_icon_with_strategy "$selected_strategy" "$icon_file" "$force_asset" || return 1
-  if strategy_requires_bundle_refresh "$selected_strategy"; then
-    touch_app_bundle "$APP_PATH" || return 1
-    if [[ "$no_resign" != true ]]; then
-      resign_app_bundle "$APP_PATH" || return 1
-    fi
-  fi
-  if [[ "$do_nuke" == true ]]; then
-    [[ "$ICONFORGE_DRY_RUN" == true ]] && nuke_args+=("--dry-run")
-    cmd_nuke "$APP_PATH" "${nuke_args[@]}"
-  fi
-
-  if [[ "$ICONFORGE_DRY_RUN" == true ]]; then
-    printf 'Strategy: %s\n' "$selected_strategy"
-    printf 'Planned icon target: %s\n' "$APP_ICON_TARGET"
-    printf 'Planned backup path: %s\n' "$APP_ICON_BACKUP"
-    if strategy_requires_bundle_refresh "$selected_strategy" && [[ "$no_resign" != true ]]; then
-      printf 'Planned re-sign: %s\n' "$APP_PATH"
-    fi
-    [[ "$do_nuke" == true ]] && printf 'Planned cache refresh: yes\n'
-  else
-    printf 'Strategy: %s\n' "$selected_strategy"
-    printf 'Applied icon: %s\n' "$APP_ICON_TARGET"
-    printf 'Backup icon: %s\n' "$APP_ICON_BACKUP"
-    if strategy_requires_bundle_refresh "$selected_strategy" && [[ "$no_resign" != true ]]; then
-      printf 'Re-signed: %s\n' "$APP_PATH"
-    fi
+    apply_to_inspected_app "$icon_file" "$selected_strategy" "$force_asset" "$no_resign" || return 1
     if [[ "$do_nuke" == true ]]; then
-      printf 'Cache refresh: requested\n'
+      [[ "$ICONFORGE_DRY_RUN" == true ]] && nuke_args+=("--dry-run")
+      cmd_nuke "$APP_PATH" "${nuke_args[@]}"
     fi
+
+    print_explicit_apply_result "$selected_strategy" "$do_nuke" "$no_resign"
+    return 0
   fi
 
-  return 0
+  cmd_apply_reconcile "$app_arg" "$icon_root_arg" "$strategy_arg" "$force_asset" "$no_resign" "$verbose"
 }
 
 cmd_restore() {
