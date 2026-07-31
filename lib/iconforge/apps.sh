@@ -34,6 +34,7 @@ Usage:
   iconforge restore <app> [--nuke] [--dry-run]
 
 Restore the original icon from the *_ugly.icns backup created by apply.
+For apps changed with the fileicon strategy, remove the file-level custom icon.
 EOF
 }
 
@@ -524,6 +525,7 @@ cmd_restore() {
   local no_resign=false
   local backup_file=""
   local nuke_args=()
+  local restored_with_fileicon=false
 
   [[ $# -gt 0 ]] || { restore_help; return 1; }
 
@@ -562,19 +564,26 @@ cmd_restore() {
   [[ -n "$app_arg" ]] || fail "restore requires an app argument" || return 1
 
   inspect_app_metadata "$app_arg" || return 1
-  backup_file="$(find_restore_backup)" || { fail "No *_ugly.icns backup found for $APP_PATH" || return 1; }
+  backup_file="$(find_restore_backup || true)"
 
-  if [[ -z "$APP_ICON_TARGET" ]]; then
-    APP_ICON_TARGET="${backup_file%_ugly.icns}.icns"
-    APP_ICON_BACKUP="$backup_file"
-  fi
+  if [[ -n "$backup_file" ]]; then
+    if [[ -z "$APP_ICON_TARGET" ]]; then
+      APP_ICON_TARGET="${backup_file%_ugly.icns}.icns"
+      APP_ICON_BACKUP="$backup_file"
+    fi
 
-  require_existing_file_path "Backup icon file" "$backup_file" || return 1
-  require_nonempty_path "Restore icon target path" "$APP_ICON_TARGET" || return 1
-  run_cmd "$CP_BIN" "$backup_file" "$APP_ICON_TARGET" || return 1
-  touch_app_bundle "$APP_PATH" || return 1
-  if [[ "$no_resign" != true ]]; then
-    resign_app_bundle "$APP_PATH" || return 1
+    require_existing_file_path "Backup icon file" "$backup_file" || return 1
+    require_nonempty_path "Restore icon target path" "$APP_ICON_TARGET" || return 1
+    run_cmd "$CP_BIN" "$backup_file" "$APP_ICON_TARGET" || return 1
+    touch_app_bundle "$APP_PATH" || return 1
+    if [[ "$no_resign" != true ]]; then
+      resign_app_bundle "$APP_PATH" || return 1
+    fi
+  elif strategy_fileicon_available; then
+    strategy_fileicon_restore || return 1
+    restored_with_fileicon=true
+  else
+    fail "No *_ugly.icns backup found and fileicon is unavailable for $APP_PATH" || return 1
   fi
   if [[ "$do_nuke" == true ]]; then
     [[ "$ICONFORGE_DRY_RUN" == true ]] && nuke_args+=("--dry-run")
@@ -582,12 +591,20 @@ cmd_restore() {
   fi
 
   if [[ "$ICONFORGE_DRY_RUN" == true ]]; then
-    printf 'Planned restore target: %s\n' "$APP_ICON_TARGET"
-    [[ "$no_resign" == true ]] || printf 'Planned re-sign: %s\n' "$APP_PATH"
+    if [[ "$restored_with_fileicon" == true ]]; then
+      printf 'Planned removal of fileicon custom icon: %s\n' "$APP_PATH"
+    else
+      printf 'Planned restore target: %s\n' "$APP_ICON_TARGET"
+      [[ "$no_resign" == true ]] || printf 'Planned re-sign: %s\n' "$APP_PATH"
+    fi
   else
-    printf 'Restored icon: %s\n' "$APP_ICON_TARGET"
-    if [[ "$no_resign" != true ]]; then
-      printf 'Re-signed: %s\n' "$APP_PATH"
+    if [[ "$restored_with_fileicon" == true ]]; then
+      printf 'Removed fileicon custom icon: %s\n' "$APP_PATH"
+    else
+      printf 'Restored icon: %s\n' "$APP_ICON_TARGET"
+      if [[ "$no_resign" != true ]]; then
+        printf 'Re-signed: %s\n' "$APP_PATH"
+      fi
     fi
   fi
 
@@ -597,16 +614,19 @@ cmd_restore() {
 collect_nuke_targets() {
   local targets=()
   local entry
-  local user_name
+  local darwin_cache_dir
 
   targets+=("$HOME/Library/Caches/com.apple.iconservices.store")
   targets+=("$HOME/Library/Caches/com.apple.iconservices")
 
-  user_name="$(id -un)"
-  while IFS= read -r entry; do
-    [[ -n "$entry" ]] || continue
-    targets+=("$entry")
-  done < <(find /private/var/folders -user "$user_name" \( -name 'com.apple.dock.iconcache' -o -name 'com.apple.iconservices*' \) -print 2>/dev/null || true)
+  # getconf resolves the current user's cache directory directly. Avoid walking
+  # all of /private/var/folders, which is both slow and unnecessary.
+  darwin_cache_dir="$(getconf DARWIN_USER_CACHE_DIR 2>/dev/null || true)"
+  if [[ -n "$darwin_cache_dir" && -d "$darwin_cache_dir" ]]; then
+    for entry in "$darwin_cache_dir"/com.apple.dock.iconcache "$darwin_cache_dir"/com.apple.iconservices*; do
+      [[ -e "$entry" ]] && targets+=("$entry")
+    done
+  fi
 
   printf '%s\n' "${targets[@]}" | awk '!seen[$0]++'
 }

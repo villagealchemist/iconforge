@@ -4,8 +4,12 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 )
+
+var releaseVersion string
 
 // prettyTestStart sets up consistent logging for each test
 func prettyTestStart(t *testing.T, name string) {
@@ -27,7 +31,12 @@ func TestMain(m *testing.M) {
 	fmt.Println("🧪 Running iconforge-processor Go tests...")
 
 	// Build the binary for integration tests
-	if err := exec.Command("go", "build", "-o", "iconforge-processor-test").Run(); err != nil {
+	versionBytes, err := os.ReadFile(filepath.Join("..", "VERSION"))
+	if err != nil {
+		panic("Failed to read release version: " + err.Error())
+	}
+	releaseVersion = strings.TrimSpace(string(versionBytes))
+	if err := exec.Command("go", "build", "-ldflags", "-X main.version="+releaseVersion, "-o", "iconforge-processor-test").Run(); err != nil {
 		panic("Failed to build test binary: " + err.Error())
 	}
 
@@ -54,7 +63,7 @@ func TestVersionCommand(t *testing.T) {
 		t.Fatalf("Version command failed: %v", err)
 	}
 
-	expected := "iconforge-processor v1.0.0"
+	expected := "iconforge-processor v" + releaseVersion
 	if string(output) != expected+"\n" {
 		t.Errorf("Expected %q, got %q", expected, string(output))
 	}

@@ -2,9 +2,12 @@
 
 set -euo pipefail
 
-BIN_TARGET="/usr/local/bin/iconforge"
-RUNTIME_DIR="/usr/local/lib/iconforge"
+PREFIX="${PREFIX:-/usr/local}"
+BIN_TARGET="$PREFIX/bin/iconforge"
+RUNTIME_DIR="$PREFIX/lib/iconforge"
 removed=0
+
+[[ "$PREFIX" != "/" ]] || { echo "Error: PREFIX must not be /"; exit 1; }
 
 if [[ -f "$BIN_TARGET" ]]; then
   echo "Removing $BIN_TARGET"

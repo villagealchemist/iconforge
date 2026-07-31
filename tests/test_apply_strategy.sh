@@ -47,6 +47,17 @@ EOF
 #!/usr/bin/env bash
 set -euo pipefail
 printf '%s\n' "$*" >> "${ICONFORGE_TEST_LOG_DIR}/fileicon.log"
+case "${1:-}" in
+  set)
+    : > "${ICONFORGE_TEST_LOG_DIR}/fileicon-active"
+    ;;
+  test)
+    [[ -f "${ICONFORGE_TEST_LOG_DIR}/fileicon-active" ]]
+    ;;
+  rm)
+    rm -f "${ICONFORGE_TEST_LOG_DIR}/fileicon-active"
+    ;;
+esac
 EOF
 
   chmod +x "$FAKE_BIN/touch" "$FAKE_BIN/codesign" "$FAKE_BIN/fileicon"
@@ -129,6 +140,17 @@ run_apply_without_fileicon() {
   bash "$ROOT_ICONFORGE" apply "$@" >"$output_file" 2>&1
 }
 
+run_restore() {
+  local output_file="$1"
+  shift
+  ICONFORGE_TEST_LOG_DIR="$FAKE_LOG_DIR" \
+  PATH="$FAKE_BIN:$PATH" \
+  ICONFORGE_TOUCH_BIN=touch \
+  ICONFORGE_CODESIGN_BIN=codesign \
+  ICONFORGE_FILEICON_BIN=fileicon \
+  bash "$ROOT_ICONFORGE" restore "$@" >"$output_file" 2>&1
+}
+
 mkdir -p "$TEST_DIR"
 setup_fake_bin
 
@@ -173,6 +195,11 @@ run_apply "$OUTPUT" "$APP_ASSET" --icon "$REPLACEMENT_ICON"
 assert_file_contains "$OUTPUT" "Strategy: fileicon"
 assert_file_contains "$FAKE_LOG_DIR/fileicon.log" "set $APP_ASSET_REALPATH $REPLACEMENT_ICON"
 assert_not_exists "$FAKE_LOG_DIR/touch.log"
+
+run_restore "$OUTPUT" "$APP_ASSET"
+assert_file_contains "$OUTPUT" "Removed fileicon custom icon: $APP_ASSET_REALPATH"
+assert_file_contains "$FAKE_LOG_DIR/fileicon.log" "rm $APP_ASSET_REALPATH"
+assert_not_exists "$FAKE_LOG_DIR/fileicon-active"
 
 rm -f "$FAKE_LOG_DIR/"*.log
 mv "$FAKE_BIN/fileicon" "$FAKE_BIN/fileicon.disabled"

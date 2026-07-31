@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 
-ICONFORGE_VERSION="2.0.0"
-
 if ! command -v realpath >/dev/null 2>&1; then
   realpath() {
     if [[ -d "$1" ]]; then
@@ -14,6 +12,7 @@ fi
 
 ICONFORGE_ROOT="${ICONFORGE_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 ICONFORGE_PROCESSOR="${ICONFORGE_PROCESSOR:-$ICONFORGE_ROOT/iconforge-processor/iconforge-processor}"
+ICONFORGE_VERSION="$(<"$ICONFORGE_ROOT/VERSION")"
 
 PLIST_BUDDY_BIN="${ICONFORGE_PLIST_BUDDY_BIN:-/usr/libexec/PlistBuddy}"
 PLUTIL_BIN="${ICONFORGE_PLUTIL_BIN:-/usr/bin/plutil}"

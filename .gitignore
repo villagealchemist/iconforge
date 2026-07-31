@@ -40,6 +40,7 @@ tests/.iconforge.test.env
 # Build artifacts
 /iconforge-processor/iconforge-processor
 /iconforge-processor-*
+/.gocache/
 
 # Test artifacts
 tmp/

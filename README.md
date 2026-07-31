@@ -92,6 +92,7 @@ It does not use privileged deletion or destructive system-wide resets.
 - Ad hoc signing is the default after `apply` and `restore`; use `--no-resign` only if you know you want to handle signing yourself.
 - System apps and managed apps may reject modification or be restored by the OS or MDM tooling.
 - Asset-catalog-backed apps may ignore loose `.icns` replacement even when the file copy succeeds.
+- For asset-catalog-backed apps, Icon Forge uses `fileicon` when available. This is a file-level Finder customization, not a permanent bundle change: app updates can remove it. Run `iconforge restore <app> --nuke` to remove that custom icon and recover from stale Finder metadata.
 
 ## Development
 
@@ -102,3 +103,22 @@ make lint
 ```
 
 The Go binary in `iconforge-processor/` remains responsible for image decoding, PNG conversion, and resizing. The macOS bundle operations stay in shell.
+
+## Installation
+
+Icon Forge supports macOS and requires Xcode Command Line Tools (`iconutil`, `codesign`, and related bundle tools).
+
+Once the public tap is published, install the current release with:
+
+```bash
+brew install villagealchemist/iconforge/iconforge
+```
+
+For a local source install, build first and choose a writable prefix (the default is `/usr/local`):
+
+```bash
+make build
+PREFIX=/usr/local ./install.sh
+```
+
+Use `PREFIX=/usr/local ./uninstall.sh` with the same prefix to remove a local source installation. Release and tap-maintenance details are in [RELEASING.md](RELEASING.md).

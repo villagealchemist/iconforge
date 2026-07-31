@@ -23,12 +23,12 @@ for test_file in tests/test_*.sh; do
   LOG_FILE="tmp/$(basename "$test_file").log"
   if bash "$test_file" >"$LOG_FILE" 2>&1; then
     echo "✅ Passed: $test_file"
-    ((PASS++))
+    ((PASS+=1))
   else
     echo "❌ Failed: $test_file"
     echo "🔍 Output:"
     cat "$LOG_FILE"
-    ((FAIL++))
+    ((FAIL+=1))
   fi
 
   echo

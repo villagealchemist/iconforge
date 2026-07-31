@@ -2,8 +2,10 @@
 
 PROCESSOR_DIR := iconforge-processor
 PROCESSOR_BIN := iconforge-processor
-SCRIPT_NAME := iconforge
+SCRIPT_NAME := iconforge.sh
 TEST_DIR := tests
+VERSION := $(shell tr -d '[:space:]' < VERSION)
+GO_LDFLAGS := -s -w -X main.version=$(VERSION)
 
 .PHONY: all
 all: build
@@ -26,19 +28,19 @@ help:
 
 .PHONY: deps
 deps:
-	@cd $(PROCESSOR_DIR) && go mod tidy
+	@cd $(PROCESSOR_DIR) && go mod download
 
 .PHONY: build
 build: deps
 	@echo "Building $(PROCESSOR_BIN)..."
-	@cd $(PROCESSOR_DIR) && go build -ldflags="-s -w" -o $(PROCESSOR_BIN)
+	@cd $(PROCESSOR_DIR) && go build -ldflags="$(GO_LDFLAGS)" -o $(PROCESSOR_BIN)
 
 .PHONY: build-all
 build-all: deps
 	@cd $(PROCESSOR_DIR) && \
-		GOOS=darwin GOARCH=amd64 go build -ldflags="-s -w" -o ../$(PROCESSOR_BIN)-darwin-amd64 && \
-		GOOS=darwin GOARCH=arm64 go build -ldflags="-s -w" -o ../$(PROCESSOR_BIN)-darwin-arm64 && \
-		GOOS=linux GOARCH=amd64 go build -ldflags="-s -w" -o ../$(PROCESSOR_BIN)-linux-amd64
+		GOOS=darwin GOARCH=amd64 go build -ldflags="$(GO_LDFLAGS)" -o ../$(PROCESSOR_BIN)-darwin-amd64 && \
+		GOOS=darwin GOARCH=arm64 go build -ldflags="$(GO_LDFLAGS)" -o ../$(PROCESSOR_BIN)-darwin-arm64 && \
+		GOOS=linux GOARCH=amd64 go build -ldflags="$(GO_LDFLAGS)" -o ../$(PROCESSOR_BIN)-linux-amd64
 
 .PHONY: install
 install: build

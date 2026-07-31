@@ -16,6 +16,8 @@ import (
 	"golang.org/x/image/webp"
 )
 
+var version = "dev"
+
 func main() {
 	if len(os.Args) < 2 {
 		printUsage()
@@ -29,7 +31,7 @@ func main() {
 	case "convert":
 		handleConvert()
 	case "version":
-		fmt.Println("iconforge-processor v1.0.0")
+		fmt.Printf("iconforge-processor v%s\n", version)
 	case "info":
 		handleInfo()
 	default:
