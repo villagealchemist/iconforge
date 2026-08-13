@@ -22,6 +22,11 @@ All notable user-facing changes to Icon Forge are recorded here.
 - App updates can still remove Finder custom-icon data. Icon Forge can reapply or remove it but cannot make an updater
   preserve it.
 
+### Development
+
+- Active shell and Go test output now uses always-colored text status glyphs and readable labels: `✓ [PASS]`,
+  `✗ [FAIL]`, `▸ [RUN]`, `○ [SKIP]`, and `ⓘ [INFO]`. ANSI colors intentionally remain in redirected logs and CI.
+
 ## 2.0.0
 
 Icon Forge 2 is a macOS icon workflow rather than only an image converter.

@@ -409,8 +409,9 @@ The `native` strategy:
 3. Verifies the Finder custom-icon flag and the `Icon\r` custom-icon payload.
 4. Runs a second helper `test` from the Bash strategy after a real apply.
 
-It does not replace app-bundle contents, touch the app, create an internal backup, or re-sign the bundle. It overwrites
-any existing Finder custom icon without preserving that previous custom icon.
+It does not alter files under `Contents/`, touch the app through Icon Forge's bundle-refresh path, create an internal
+backup, or re-sign the bundle. AppKit stores Finder metadata and an `Icon\r` payload at the `.app` root. Native apply
+overwrites any existing Finder custom icon without preserving that previous custom icon.
 
 If native apply finds a selectable `*_ugly.icns` backup from an earlier internal apply, it warns that legacy bundle
 mutation remains. Reinstall a formerly vendor-signed app from its trusted source to recover its original signature,
@@ -1194,16 +1195,16 @@ after an update when appropriate.
 System Integrity Protection, ownership, MDM policy, filesystem permissions, and application signature policy can prevent
 modification. Do not disable macOS security features to force Icon Forge to alter a protected app.
 
-When automatic selection finds a loose icon inside a nonwritable bundle, it chooses `native` instead of attempting an
-internal backup and copy. Direct mode prints a scoped helper command; managed mode reports `needs-authorization`. Run
-only that individual native-helper operation with `sudo`, then run `iconforge refresh` normally. Do not run a permanent
-root shell, recursively change ownership under `/Applications`, or run an entire managed reconciliation as root.
+While the bundled helper is available, automatic selection uses `native` for every app, including nonwritable and
+vendor-signed bundles. A real direct apply to a nonwritable bundle prints a scoped helper command; managed mode reports
+`needs-authorization`. Run only that individual native-helper operation with `sudo`, then run `iconforge refresh`
+normally. Do not run a permanent root shell, recursively change ownership under `/Applications`, or run an entire
+managed reconciliation as root.
 
-Automatic selection likewise chooses `native` for a vendor-signed app with a loose icon. This matters for hardened and
-updater-managed apps: replacing a sealed resource and ad hoc signing the bundle can prevent launch or leave the bundle
-invalid after an updater replaces only part of it. If an earlier Icon Forge version already modified such an app and
-`codesign --verify --deep --strict --all-architectures <app>` fails, reinstall or update the app from its official
-source before reapplying the icon with v2.
+Universal native routing matters for hardened and updater-managed apps: explicit internal replacement changes a sealed
+resource and ad hoc signs the bundle, which can prevent launch or leave the bundle invalid after an updater replaces
+only part of it. If an earlier Icon Forge version already modified such an app, reinstall or update it from its official
+source to recover the vendor signature before reapplying the icon with v2.0.1.
 
 Use a disposable copied app bundle for risky tests. Never use a live critical app as the first test of a forced or
 unfamiliar path.

@@ -21,7 +21,7 @@ safest route in, and apply it to one application or reconcile an entire icon lib
 
 Preview the work with a dry run. Let the sparks fly when the plan looks right.
 
-> **No `fileicon`, `ffmpeg`, AppleScript, or `iconutil`.**
+> **No runtime dependency on `fileicon`, `ffmpeg`, AppleScript, or `iconutil`.**
 
 ---
 
@@ -136,23 +136,21 @@ iconforge forge --help
 
 ## ⊹ Application strategies
 
-By default, `iconforge apply` chooses a strategy automatically.
+By default, `iconforge apply` chooses a strategy automatically. When the bundled native helper is available, every app
+uses the native route.
 
 ### Native
 
-The native route sets a Finder custom icon through the bundled AppKit helper. It does not replace files inside the app
-or re-sign its bundle.
-
-This is the automatic choice for asset catalogs, vendor-signed apps, existing Finder custom icons, and apps where
-internal replacement is unsuitable.
+The native route sets a Finder custom icon through the bundled AppKit helper. AppKit stores Finder metadata and an
+`Icon\r` payload at the `.app` root, while leaving `Contents/` and the application’s code signature unchanged.
 
 ### Internal `.icns`
 
 For writable apps with a traditional loose `.icns`, iconforge can preserve the original as `*_ugly.icns`, install the
 replacement, and ad hoc re-sign the bundle.
 
-Automatic selection avoids this route for vendor-signed apps. Use an explicit internal strategy only when you understand
-the signing and updater consequences.
+This route is never selected automatically while the bundled helper is available. Use the explicit `internal-icns`
+strategy only when you understand the signing and updater consequences.
 
 The compatibility strategy name `fileicon` still resolves to the native helper. No external `fileicon` executable is
 used.
@@ -216,8 +214,12 @@ The complete safety and recovery guide is in [Safety, updates, and recovery](doc
 ```bash
 make build
 make test
+make test-verbose
 make lint
 ```
+
+Test output uses always-colored, text-rendering status glyphs: green `✓ [PASS]`, red `✗ [FAIL]`, cyan `▸ [RUN]`, yellow
+`○ [SKIP]`, and bright-magenta `ⓘ [INFO]`. The labels and ANSI colors remain present in redirected logs and CI output.
 
 The repository is divided into a Bash command layer, a Go image processor, and a native Objective-C/AppKit helper:
 

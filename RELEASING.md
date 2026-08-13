@@ -53,7 +53,9 @@ The repositories can drift independently, so do not describe a 2.x Homebrew inst
 
 6. Audit `README.md`, `docs/USAGE.md`, installed help, and the Homebrew description for new commands, options, formats, dependencies, compatibility names, safety behavior, and internal links. Validate every command example against the release tree.
 
-   Confirm that protected-bundle dry runs report `needs-authorization` without prompting, and that nested applications such as Adobe Photoshop are matched at their inner `.app` path.
+   Confirm that managed protected-bundle dry runs report `needs-authorization` without prompting, while direct dry runs
+   print the planned native operation. Confirm that nested applications such as Adobe Photoshop are matched at their
+   inner `.app` path.
 
 7. Commit the reviewed release changes, merge or push the release commit, and create an annotated tag named `v<version>`. Push the tag and create a GitHub release from it. GitHub's generated source archive is the Homebrew source artifact.
 
