@@ -32,10 +32,8 @@ jobs:
       - name: Build release architectures
         run: make build-all
 
-      - name: Validate generated Homebrew formula
-        run: |
-          ./scripts/render-homebrew-formula.sh "$(tr -d '[:space:]' < VERSION)" "$(printf '0%.0s' {1..64})" > "$RUNNER_TEMP/iconforge.rb"
-          ruby -c "$RUNNER_TEMP/iconforge.rb"
+      - name: Validate generated Homebrew formula integration contract
+        run: bash tests/test_homebrew_formula.sh
 
       - name: Confirm checks left the tree unchanged
         run: git diff --exit-code

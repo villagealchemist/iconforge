@@ -69,22 +69,33 @@ The repositories can drift independently, so do not describe a 2.x Homebrew inst
 
 10. Copy the rendered formula to `Formula/iconforge.rb` in the separate tap repository. Review the full diff to confirm that it builds and installs the Go processor, native AppKit helper, Bash libraries, entry point, and `VERSION` from the same release.
 
-11. Validate the tap formula from its repository:
+11. With Homebrew's installed tap checkout pointing at the candidate tap repository, validate the formula and exercise a
+    real forge operation through the installed public launcher. A version-only check is insufficient because it does not
+    load the Go processor:
 
    ```bash
-   brew audit --strict --formula ./Formula/iconforge.rb
-   brew install --build-from-source ./Formula/iconforge.rb
-   brew test iconforge
+   brew style Formula/iconforge.rb
+   brew audit --strict villagealchemist/iconforge/iconforge
+   brew reinstall --build-from-source villagealchemist/iconforge/iconforge
+   brew test villagealchemist/iconforge/iconforge
    iconforge --version
+   rm -rf /tmp/iconforge-release-smoke
+   iconforge forge /path/to/iconforge/assets/iconforge_logo.png --output /tmp/iconforge-release-smoke
+   test -f /tmp/iconforge-release-smoke/iconforge_logo.icns
    ```
 
 12. Commit and push the tested tap formula. Verify the public path in a fresh shell:
 
    ```bash
    brew uninstall iconforge
+   brew untap villagealchemist/iconforge
+   brew tap villagealchemist/iconforge
    brew install villagealchemist/iconforge/iconforge
    iconforge --version
-   iconforge apply --help
+   rm -rf /tmp/iconforge-release-smoke
+   iconforge forge /path/to/iconforge/assets/iconforge_logo.png --output /tmp/iconforge-release-smoke
+   test -f /tmp/iconforge-release-smoke/iconforge_logo.icns
+   brew test villagealchemist/iconforge/iconforge
    ```
 
 13. Publish release notes with user-visible changes, upgrade guidance, macOS and toolchain requirements, updater and Finder-custom-icon caveats, and the exact version and tag.
