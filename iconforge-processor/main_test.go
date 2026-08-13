@@ -15,11 +15,12 @@ import (
 var releaseVersion string
 
 const (
-	testColorGreen  = "\x1b[32m"
-	testColorRed    = "\x1b[31m"
-	testColorCyan   = "\x1b[36m"
-	testColorYellow = "\x1b[33m"
-	testColorReset  = "\x1b[0m"
+	testColorGreen         = "\x1b[32m"
+	testColorRed           = "\x1b[31m"
+	testColorCyan          = "\x1b[36m"
+	testColorYellow        = "\x1b[33m"
+	testColorBrightMagenta = "\x1b[95m"
+	testColorReset         = "\x1b[0m"
 )
 
 func testSymbol(label string) string {
@@ -110,7 +111,7 @@ func TestStatusOutputIsColoredAndReadable(t *testing.T) {
 		{testColorRed, "FAIL", "\x1b[31m✗ [FAIL]\x1b[0m example"},
 		{testColorCyan, "RUN", "\x1b[36m▸ [RUN]\x1b[0m example"},
 		{testColorYellow, "SKIP", "\x1b[33m○ [SKIP]\x1b[0m example"},
-		{testColorCyan, "INFO", "\x1b[36mⓘ [INFO]\x1b[0m example"},
+		{testColorBrightMagenta, "INFO", "\x1b[95mⓘ [INFO]\x1b[0m example"},
 	}
 
 	for _, tc := range testCases {

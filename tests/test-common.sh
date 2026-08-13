@@ -9,6 +9,7 @@ TEST_COLOR_GREEN=$'\033[32m'
 TEST_COLOR_RED=$'\033[31m'
 TEST_COLOR_CYAN=$'\033[36m'
 TEST_COLOR_YELLOW=$'\033[33m'
+TEST_COLOR_BRIGHT_MAGENTA=$'\033[95m'
 TEST_COLOR_RESET=$'\033[0m'
 
 test_status() {
@@ -36,7 +37,7 @@ test_skip() {
 }
 
 test_info() {
-  test_status "$TEST_COLOR_CYAN" "ⓘ" "INFO" "$@"
+  test_status "$TEST_COLOR_BRIGHT_MAGENTA" "ⓘ" "INFO" "$@"
 }
 
 : "${TEST_NAME:?TEST_NAME must be set before sourcing test-common.sh}"
