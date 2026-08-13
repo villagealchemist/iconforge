@@ -13,33 +13,33 @@ mkdir -p "$TEST_DIR"
 ruby -c "$FORMULA" >/dev/null
 
 grep -Fq '(libexec/"iconforge-processor").install "iconforge-processor/iconforge-processor"' "$FORMULA" || {
-  echo "❌ Formula does not preserve the nested processor runtime layout"
+  test_fail "Formula does not preserve the nested processor runtime layout"
   exit 1
 }
 
 if grep -Fq 'libexec.install "iconforge-processor/iconforge-processor" => "iconforge-processor"' "$FORMULA"; then
-  echo "❌ Formula still flattens the processor runtime layout"
+  test_fail "Formula still flattens the processor runtime layout"
   exit 1
 fi
 
 grep -Fq 'system bin/"iconforge", "forge"' "$FORMULA" || {
-  echo "❌ Formula test does not exercise forge through the public launcher"
+  test_fail "Formula test does not exercise forge through the public launcher"
   exit 1
 }
 
 grep -Fq 'assert_path_exists icns' "$FORMULA" || {
-  echo "❌ Formula test does not assert the forged ICNS output"
+  test_fail "Formula test does not assert the forged ICNS output"
   exit 1
 }
 
 grep -Fq 'system "iconutil", "-c", "iconset"' "$FORMULA" || {
-  echo "❌ Formula test does not unpack the forged ICNS"
+  test_fail "Formula test does not unpack the forged ICNS"
   exit 1
 }
 
 grep -Fq 'icon_512x512.png icon_512x512@2x.png' "$FORMULA" || {
-  echo "❌ Formula test does not require the complete iconset representation list"
+  test_fail "Formula test does not require the complete iconset representation list"
   exit 1
 }
 
-echo "🎉 $TEST_NAME passed"
+test_pass "$TEST_NAME passed"

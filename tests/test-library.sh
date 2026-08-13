@@ -7,7 +7,7 @@ source ./lib/iconforge/common.sh
 source ./lib/iconforge/library.sh
 
 assert_equals() {
-  [[ "$1" == "$2" ]] || { echo "❌ Expected '$1' == '$2'"; exit 1; }
+  [[ "$1" == "$2" ]] || { test_fail "Expected '$1' == '$2'"; exit 1; }
 }
 
 ICON_ROOT="$TEST_DIR/icon-root"
@@ -34,14 +34,14 @@ set +e
 resolve_icon_library_entry "$ICON_ROOT" "chrome"
 STATUS=$?
 set -e
-[[ "$STATUS" -ne 0 ]] || { echo "❌ Ambiguous icon selection should fail"; exit 1; }
+[[ "$STATUS" -ne 0 ]] || { test_fail "Ambiguous icon selection should fail"; exit 1; }
 assert_equals "$ICON_LIBRARY_RESOLUTION_STATUS" "ambiguous-icns"
 
 set +e
 resolve_icon_library_entry "$ICON_ROOT" "figma"
 STATUS=$?
 set -e
-[[ "$STATUS" -ne 0 ]] || { echo "❌ PNG-only icon should not be treated as ready"; exit 1; }
+[[ "$STATUS" -ne 0 ]] || { test_fail "PNG-only icon should not be treated as ready"; exit 1; }
 assert_equals "$ICON_LIBRARY_RESOLUTION_STATUS" "needs-forge"
 
-echo "🎉 $TEST_NAME passed"
+test_pass "$TEST_NAME passed"

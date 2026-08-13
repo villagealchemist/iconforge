@@ -79,14 +79,17 @@ test: build test-go
 
 .PHONY: test-verbose
 test-verbose: build
-	@for test in $(TEST_DIR)/test-*.sh; do \
-		case $$test in \
-			*test-all.sh|*test-common.sh|*test-env.sh) continue ;; \
-		esac; \
-		echo "Running $$test"; \
-		bash $$test; \
-		echo ""; \
-	done
+	@bash -c 'set -euo pipefail; \
+		TEST_NAME="verbose test suite"; \
+		source $(TEST_DIR)/test-common.sh; \
+		for test in $(TEST_DIR)/test-*.sh; do \
+			case $$test in \
+				*test-all.sh|*test-common.sh|*test-env.sh) continue ;; \
+			esac; \
+			test_run "$$test"; \
+			bash "$$test"; \
+			printf "\n"; \
+		done'
 
 .PHONY: lint
 lint:

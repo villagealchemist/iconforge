@@ -11,27 +11,27 @@ FAKE_BIN="$ABS_TEST_DIR/fakebin"
 FAKE_LOG_DIR="$ABS_TEST_DIR/logs"
 
 assert_equals() {
-  [[ "$1" == "$2" ]] || { echo "❌ Expected '$1' == '$2'"; exit 1; }
+  [[ "$1" == "$2" ]] || { test_fail "Expected '$1' == '$2'"; exit 1; }
 }
 
 assert_contains() {
-  [[ "$1" == *"$2"* ]] || { echo "❌ Expected output to contain '$2'"; exit 1; }
+  [[ "$1" == *"$2"* ]] || { test_fail "Expected output to contain '$2'"; exit 1; }
 }
 
 assert_not_exists() {
-  [[ ! -e "$1" ]] || { echo "❌ Unexpected path exists: $1"; exit 1; }
+  [[ ! -e "$1" ]] || { test_fail "Unexpected path exists: $1"; exit 1; }
 }
 
 assert_file_contains() {
   local file_path="$1"
   local needle="$2"
-  grep -F -- "$needle" "$file_path" >/dev/null || { echo "❌ Expected $file_path to contain '$needle'"; exit 1; }
+  grep -F -- "$needle" "$file_path" >/dev/null || { test_fail "Expected $file_path to contain '$needle'"; exit 1; }
 }
 
 assert_file_not_contains() {
   local file_path="$1"
   local needle="$2"
-  [[ ! -f "$file_path" ]] || ! grep -F -- "$needle" "$file_path" >/dev/null || { echo "❌ Expected $file_path not to contain '$needle'"; exit 1; }
+  [[ ! -f "$file_path" ]] || ! grep -F -- "$needle" "$file_path" >/dev/null || { test_fail "Expected $file_path not to contain '$needle'"; exit 1; }
 }
 
 setup_fake_bin() {
@@ -273,7 +273,7 @@ run_apply_without_native_helper "$OUTPUT" "$APP_ASSET" --icon "$REPLACEMENT_ICON
 STATUS=$?
 set -e
 mv "$FAKE_BIN/iconforge-native-icon.disabled" "$FAKE_BIN/iconforge-native-icon"
-[[ "$STATUS" -ne 0 ]] || { echo "❌ Missing native helper should fail"; exit 1; }
+[[ "$STATUS" -ne 0 ]] || { test_fail "Missing native helper should fail"; exit 1; }
 assert_file_contains "$OUTPUT" "Bundled native icon helper not found or not executable"
 assert_not_exists "$FAKE_LOG_DIR/native-icon.log"
 
@@ -281,28 +281,28 @@ set +e
 run_apply "$OUTPUT" "" --icon "$REPLACEMENT_ICON"
 STATUS=$?
 set -e
-[[ "$STATUS" -ne 0 ]] || { echo "❌ Empty app path should fail"; exit 1; }
+[[ "$STATUS" -ne 0 ]] || { test_fail "Empty app path should fail"; exit 1; }
 assert_file_contains "$OUTPUT" "apply requires an app argument"
 
 set +e
 run_apply "$OUTPUT" "$APP_INTERNAL" --icon ""
 STATUS=$?
 set -e
-[[ "$STATUS" -ne 0 ]] || { echo "❌ Empty icon path should fail"; exit 1; }
+[[ "$STATUS" -ne 0 ]] || { test_fail "Empty icon path should fail"; exit 1; }
 assert_file_contains "$OUTPUT" "apply requires --icon <file.icns>"
 
 set +e
 run_apply "$OUTPUT" "$ABS_TEST_DIR/Missing.app" --icon "$REPLACEMENT_ICON"
 STATUS=$?
 set -e
-[[ "$STATUS" -ne 0 ]] || { echo "❌ Nonexistent app should fail"; exit 1; }
+[[ "$STATUS" -ne 0 ]] || { test_fail "Nonexistent app should fail"; exit 1; }
 assert_file_contains "$OUTPUT" "Could not resolve app bundle"
 
 set +e
 run_apply "$OUTPUT" "$APP_INTERNAL" --icon "$ABS_TEST_DIR/missing.icns"
 STATUS=$?
 set -e
-[[ "$STATUS" -ne 0 ]] || { echo "❌ Nonexistent icon should fail"; exit 1; }
+[[ "$STATUS" -ne 0 ]] || { test_fail "Nonexistent icon should fail"; exit 1; }
 assert_file_contains "$OUTPUT" "Icon file not found"
 
 APP_DRY_RUN="$ABS_TEST_DIR/DryRun.app"
@@ -322,7 +322,7 @@ set +e
 run_apply "$OUTPUT" "$APP_ASSET" --icon "$REPLACEMENT_ICON" --strategy internal-icns
 STATUS=$?
 set -e
-[[ "$STATUS" -ne 0 ]] || { echo "❌ Internal strategy should refuse asset-backed apps by default"; exit 1; }
+[[ "$STATUS" -ne 0 ]] || { test_fail "Internal strategy should refuse asset-backed apps by default"; exit 1; }
 assert_file_contains "$OUTPUT" "Refusing icon replacement without --force-asset"
 
 APP_FORCED="$ABS_TEST_DIR/ForcedAsset.app"
@@ -359,7 +359,7 @@ run_apply_without_native_helper "$OUTPUT" "$APP_ASSET" --icon "$REPLACEMENT_ICON
 STATUS=$?
 set -e
 mv "$FAKE_BIN/iconforge-native-icon.disabled" "$FAKE_BIN/iconforge-native-icon"
-[[ "$STATUS" -ne 0 ]] || { echo "❌ Asset-backed app should not fall back without the native helper"; exit 1; }
+[[ "$STATUS" -ne 0 ]] || { test_fail "Asset-backed app should not fall back without the native helper"; exit 1; }
 assert_file_contains "$OUTPUT" "asset-catalog backed"
 
 APP_VENDOR_SIGNED="$ABS_TEST_DIR/VendorSigned.app"
@@ -379,7 +379,7 @@ run_apply_without_native_helper "$OUTPUT" "$APP_VENDOR_SIGNED" --icon "$REPLACEM
 STATUS=$?
 set -e
 mv "$FAKE_BIN/iconforge-native-icon.disabled" "$FAKE_BIN/iconforge-native-icon"
-[[ "$STATUS" -ne 0 ]] || { echo "❌ Vendor-signed app should not fall back without the native helper"; exit 1; }
+[[ "$STATUS" -ne 0 ]] || { test_fail "Vendor-signed app should not fall back without the native helper"; exit 1; }
 assert_file_contains "$OUTPUT" "vendor signed"
 
 APP_VERIFY_FAIL="$ABS_TEST_DIR/VerifyFail.app"
@@ -391,7 +391,7 @@ set +e
 run_apply "$OUTPUT" "$APP_VERIFY_FAIL" --icon "$REPLACEMENT_ICON" --strategy internal-icns
 STATUS=$?
 set -e
-[[ "$STATUS" -ne 0 ]] || { echo "❌ Failed signature verification should fail apply"; exit 1; }
+[[ "$STATUS" -ne 0 ]] || { test_fail "Failed signature verification should fail apply"; exit 1; }
 assert_file_contains "$OUTPUT" "Ad hoc signature verification failed"
 assert_file_contains "$OUTPUT" "restoring the preserved icon backup"
 assert_file_exists "$APP_VERIFY_FAIL/Contents/Resources/VerifyFailIcon_ugly.icns"
@@ -442,7 +442,7 @@ set +e
 run_apply "$OUTPUT" "$APP_PROTECTED" --icon "$REPLACEMENT_ICON"
 STATUS=$?
 set -e
-[[ "$STATUS" -ne 0 ]] || { echo "❌ Protected app should require authorization"; exit 1; }
+[[ "$STATUS" -ne 0 ]] || { test_fail "Protected app should require authorization"; exit 1; }
 assert_file_contains "$OUTPUT" "Administrator authorization is required"
 assert_file_contains "$OUTPUT" "scoped elevation"
 assert_file_not_contains "$FAKE_LOG_DIR/native-icon.log" "set $APP_PROTECTED_REALPATH"
@@ -453,7 +453,7 @@ set +e
 run_apply "$OUTPUT" "$APP_PROTECTED" --icon "$REPLACEMENT_ICON" --strategy internal-icns
 STATUS=$?
 set -e
-[[ "$STATUS" -ne 0 ]] || { echo "❌ Explicit internal strategy should reject a protected app"; exit 1; }
+[[ "$STATUS" -ne 0 ]] || { test_fail "Explicit internal strategy should reject a protected app"; exit 1; }
 assert_file_contains "$OUTPUT" "Internal icon replacement requires write access"
 assert_file_contains "$OUTPUT" "Use --strategy native"
 assert_not_exists "$APP_PROTECTED/Contents/Resources/ProtectedIcon_ugly.icns"
@@ -477,7 +477,7 @@ set +e
 )
 STATUS=$?
 set -e
-[[ "$STATUS" -ne 0 ]] || { echo "❌ Ambiguous app match should fail"; exit 1; }
+[[ "$STATUS" -ne 0 ]] || { test_fail "Ambiguous app match should fail"; exit 1; }
 assert_file_contains "$OUTPUT" "App name is ambiguous"
 assert_not_exists "$FAKE_LOG_DIR/touch.log"
 assert_not_exists "$FAKE_LOG_DIR/codesign.log"
@@ -488,7 +488,7 @@ set +e
 run_apply "$OUTPUT" "$APP_UNRESOLVED" --icon "$REPLACEMENT_ICON" --strategy internal-icns
 STATUS=$?
 set -e
-[[ "$STATUS" -ne 0 ]] || { echo "❌ Unresolved loose icon target should fail"; exit 1; }
+[[ "$STATUS" -ne 0 ]] || { test_fail "Unresolved loose icon target should fail"; exit 1; }
 assert_file_contains "$OUTPUT" "Loose icon target path must not be empty"
 
-echo "🎉 $TEST_NAME passed"
+test_pass "$TEST_NAME passed"

@@ -4,7 +4,7 @@ set -euo pipefail
 TEST_NAME="invalid output directory"
 source tests/test-common.sh
 
-echo "🧪 Test: $TEST_NAME"
+test_run "$TEST_NAME"
 
 BAD_DIR="/System/Library"
 
@@ -13,14 +13,14 @@ set +e
 EXIT_CODE=$?
 set -e
 
-echo "🚨 iconforge exited with: $EXIT_CODE"
+test_info "iconforge exited with: $EXIT_CODE"
 
 if [[ "$EXIT_CODE" -eq 0 ]]; then
-  echo "❌ iconforge unexpectedly succeeded writing to a protected path"
+  test_fail "iconforge unexpectedly succeeded writing to a protected path"
   exit 1
 else
-  echo "✅ Correctly failed on unwritable output path"
-  echo "🎉 $TEST_NAME passed"
+  test_pass "Correctly failed on unwritable output path"
+  test_pass "$TEST_NAME passed"
 fi
 
 exit 0

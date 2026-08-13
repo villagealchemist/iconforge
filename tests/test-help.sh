@@ -11,7 +11,7 @@ OUTPUT="$TEST_DIR/help.txt"
 assert_help_contains() {
   local needle="$1"
   grep -F -- "$needle" "$OUTPUT" >/dev/null || {
-    echo "❌ Expected help output to contain: $needle"
+    test_fail "Expected help output to contain: $needle"
     exit 1
   }
 }
@@ -61,7 +61,7 @@ for needle in \
 done
 
 assert_equals() {
-  [[ "$1" == "$2" ]] || { echo "❌ Expected '$1' == '$2'"; exit 1; }
+  [[ "$1" == "$2" ]] || { test_fail "Expected '$1' == '$2'"; exit 1; }
 }
 
 assert_equals "$("$ICONFORGE_BIN" -V)" "iconforge v2.0.1"
@@ -71,21 +71,21 @@ set +e
 "$ICONFORGE_BIN" help unknown >"$OUTPUT" 2>&1
 HELP_STATUS=$?
 set -e
-[[ "$HELP_STATUS" -ne 0 ]] || { echo "❌ Unknown help topics should fail"; exit 1; }
+[[ "$HELP_STATUS" -ne 0 ]] || { test_fail "Unknown help topics should fail"; exit 1; }
 assert_help_contains "Unknown help topic: unknown"
 
 set +e
 "$ICONFORGE_BIN" forge --output >"$OUTPUT" 2>&1
 FORGE_OPTION_STATUS=$?
 set -e
-[[ "$FORGE_OPTION_STATUS" -ne 0 ]] || { echo "❌ Missing forge option values should fail"; exit 1; }
+[[ "$FORGE_OPTION_STATUS" -ne 0 ]] || { test_fail "Missing forge option values should fail"; exit 1; }
 assert_help_contains "--output requires an output directory"
 
 set +e
 "$ICONFORGE_BIN" apply --icon >"$OUTPUT" 2>&1
 APPLY_OPTION_STATUS=$?
 set -e
-[[ "$APPLY_OPTION_STATUS" -ne 0 ]] || { echo "❌ Missing apply option values should fail"; exit 1; }
+[[ "$APPLY_OPTION_STATUS" -ne 0 ]] || { test_fail "Missing apply option values should fail"; exit 1; }
 assert_help_contains "--icon requires a .icns file"
 
-echo "🎉 $TEST_NAME passed"
+test_pass "$TEST_NAME passed"

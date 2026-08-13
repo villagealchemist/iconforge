@@ -4,7 +4,7 @@ set -euo pipefail
 TEST_NAME="batch input support"
 source tests/test-common.sh
 
-echo "🧪 Test: $TEST_NAME"
+test_run "$TEST_NAME"
 
 mkdir -p "$TEST_DIR"
 "$ICONFORGE" "$TEST_IMAGE1" "$TEST_IMAGE2" -o "$TEST_DIR" -k
@@ -15,4 +15,4 @@ safe2=$(basename "$TEST_IMAGE2" | sed 's/\.[^.]*$//' | tr -cd '[:alnum:]_-')
 assert_file_exists "$TEST_DIR/$safe1.icns"
 assert_file_exists "$TEST_DIR/$safe2.icns"
 
-echo "🎉 $TEST_NAME passed"
+test_pass "$TEST_NAME passed"

@@ -11,27 +11,27 @@ FAKE_BIN="$ABS_TEST_DIR/fakebin"
 FAKE_LOG_DIR="$ABS_TEST_DIR/logs"
 
 assert_contains() {
-  [[ "$1" == *"$2"* ]] || { echo "❌ Expected output to contain '$2'"; exit 1; }
+  [[ "$1" == *"$2"* ]] || { test_fail "Expected output to contain '$2'"; exit 1; }
 }
 
 assert_equals() {
-  [[ "$1" == "$2" ]] || { echo "❌ Expected '$1' == '$2'"; exit 1; }
+  [[ "$1" == "$2" ]] || { test_fail "Expected '$1' == '$2'"; exit 1; }
 }
 
 assert_not_exists() {
-  [[ ! -e "$1" ]] || { echo "❌ Unexpected path exists: $1"; exit 1; }
+  [[ ! -e "$1" ]] || { test_fail "Unexpected path exists: $1"; exit 1; }
 }
 
 assert_file_contains() {
   local file_path="$1"
   local needle="$2"
-  grep -F -- "$needle" "$file_path" >/dev/null || { echo "❌ Expected $file_path to contain '$needle'"; exit 1; }
+  grep -F -- "$needle" "$file_path" >/dev/null || { test_fail "Expected $file_path to contain '$needle'"; exit 1; }
 }
 
 assert_file_not_contains() {
   local file_path="$1"
   local needle="$2"
-  [[ ! -f "$file_path" ]] || ! grep -F -- "$needle" "$file_path" >/dev/null || { echo "❌ Expected $file_path not to contain '$needle'"; exit 1; }
+  [[ ! -f "$file_path" ]] || ! grep -F -- "$needle" "$file_path" >/dev/null || { test_fail "Expected $file_path not to contain '$needle'"; exit 1; }
 }
 
 assert_line_count() {
@@ -39,7 +39,7 @@ assert_line_count() {
   local expected_count="$2"
   local actual_count
   actual_count="$(wc -l < "$file_path" | tr -d ' ')"
-  [[ "$actual_count" == "$expected_count" ]] || { echo "❌ Expected $file_path to have $expected_count lines, got $actual_count"; exit 1; }
+  [[ "$actual_count" == "$expected_count" ]] || { test_fail "Expected $file_path to have $expected_count lines, got $actual_count"; exit 1; }
 }
 
 setup_fake_bin() {
@@ -248,14 +248,14 @@ set +e
 run_apply "$ABS_TEST_DIR/unconfigured-root.log" -a -n
 UNCONFIGURED_ROOT_STATUS=$?
 set -e
-[[ "$UNCONFIGURED_ROOT_STATUS" -ne 0 ]] || { echo "❌ Unconfigured icon root should fail"; exit 1; }
+[[ "$UNCONFIGURED_ROOT_STATUS" -ne 0 ]] || { test_fail "Unconfigured icon root should fail"; exit 1; }
 assert_file_contains "$ABS_TEST_DIR/unconfigured-root.log" "Managed apply requires --icon-root"
 
 set +e
 run_apply "$ABS_TEST_DIR/missing-root.log" -a -r "$ABS_TEST_DIR/does-not-exist" -n
 MISSING_ROOT_STATUS=$?
 set -e
-[[ "$MISSING_ROOT_STATUS" -ne 0 ]] || { echo "❌ Missing icon root should fail"; exit 1; }
+[[ "$MISSING_ROOT_STATUS" -ne 0 ]] || { test_fail "Missing icon root should fail"; exit 1; }
 assert_file_contains "$ABS_TEST_DIR/missing-root.log" "Icon library root not found"
 
 ICON_ROOT="$ABS_TEST_DIR/icon-root"
@@ -295,7 +295,7 @@ set +e
 run_apply "$OUTPUT" -v
 STATUS=$?
 set -e
-[[ "$STATUS" -ne 0 ]] || { echo "❌ Mixed reconciliation run should return nonzero"; exit 1; }
+[[ "$STATUS" -ne 0 ]] || { test_fail "Mixed reconciliation run should return nonzero"; exit 1; }
 assert_file_contains "$OUTPUT" "Icon Forge reconciliation"
 assert_file_contains "$OUTPUT" "Applied: 3"
 assert_file_contains "$OUTPUT" "Missing applications: 1"
@@ -332,7 +332,7 @@ set +e
 run_apply "$OUTPUT" -a
 STATUS=$?
 set -e
-[[ "$STATUS" -ne 0 ]] || { echo "❌ Reconciliation with remaining failures should return nonzero"; exit 1; }
+[[ "$STATUS" -ne 0 ]] || { test_fail "Reconciliation with remaining failures should return nonzero"; exit 1; }
 assert_file_contains "$OUTPUT" "Applied: 3"
 assert_file_contains "$OUTPUT" "Already correct: 0"
 assert_file_contains "$OUTPUT" "Needs authorization: 1"
@@ -387,4 +387,4 @@ bash "$ROOT_ICONFORGE" apply "$EXPLICIT_APP/Explicit.app" --icon "$EXPLICIT_ICON
 assert_file_contains "$OUTPUT" "Strategy: internal-icns"
 assert_file_exists "$EXPLICIT_APP/Explicit.app/Contents/Resources/ExplicitIcon_ugly.icns"
 
-echo "🎉 $TEST_NAME passed"
+test_pass "$TEST_NAME passed"

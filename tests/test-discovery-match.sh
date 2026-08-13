@@ -9,7 +9,7 @@ source ./lib/iconforge/discovery.sh
 source ./lib/iconforge/match.sh
 
 assert_equals() {
-  [[ "$1" == "$2" ]] || { echo "❌ Expected '$1' == '$2'"; exit 1; }
+  [[ "$1" == "$2" ]] || { test_fail "Expected '$1' == '$2'"; exit 1; }
 }
 
 create_fake_app() {
@@ -49,7 +49,7 @@ mkdir -p "$ICONFORGE_SYSTEM_APPLICATIONS_DIR/Adobe Photoshop 2026"
 create_fake_app "$ICONFORGE_SYSTEM_APPLICATIONS_DIR/Adobe Photoshop 2026" "Adobe Photoshop 2026" "com.adobe.Photoshop" "Adobe Photoshop 2026" "Adobe Photoshop 2026"
 
 discover_applications
-[[ "${#DISCOVERED_APP_RECORDS[@]}" -ge 3 ]] || { echo "❌ Expected discovered apps"; exit 1; }
+[[ "${#DISCOVERED_APP_RECORDS[@]}" -ge 3 ]] || { test_fail "Expected discovered apps"; exit 1; }
 
 ICONFORGE_CONFIG_APPLICATION_KEYS=("code" "chrome" "chrome-dev" "photoshop" "ghost")
 ICONFORGE_CONFIG_APP_ALIASES=(
@@ -81,14 +81,14 @@ set +e
 match_configured_application "ghost"
 STATUS=$?
 set -e
-[[ "$STATUS" -ne 0 ]] || { echo "❌ Ambiguous match should fail closed"; exit 1; }
+[[ "$STATUS" -ne 0 ]] || { test_fail "Ambiguous match should fail closed"; exit 1; }
 assert_equals "$MATCH_STATUS" "ambiguous-partial"
 
 set +e
 match_configured_application "missing-app"
 STATUS=$?
 set -e
-[[ "$STATUS" -ne 0 ]] || { echo "❌ Missing app should not succeed"; exit 1; }
+[[ "$STATUS" -ne 0 ]] || { test_fail "Missing app should not succeed"; exit 1; }
 assert_equals "$MATCH_STATUS" "missing"
 
-echo "🎉 $TEST_NAME passed"
+test_pass "$TEST_NAME passed"

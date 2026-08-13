@@ -1,7 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-echo "🧪 Running all automated iconforge tests..."
+TEST_NAME="automated test suite"
+source tests/test-common.sh
+
+test_run "Running all automated Icon Forge tests"
 echo
 
 mkdir -p tmp  # ensure temp log dir exists
@@ -12,21 +15,21 @@ FAIL=0
 for test_file in tests/test-*.sh; do
   case "$test_file" in
     *test-all.sh|*test-common.sh|*test-env.sh)
-      echo "⏩ Skipping meta script: $test_file"
+      test_skip "Meta script: $test_file"
       continue
       ;;
   esac
 
-  echo "▶️  $test_file"
+  test_run "$test_file"
 
   # Run each test with isolated stderr capture
   LOG_FILE="tmp/$(basename "$test_file").log"
   if bash "$test_file" >"$LOG_FILE" 2>&1; then
-    echo "✅ Passed: $test_file"
+    test_pass "$test_file"
     ((PASS+=1))
   else
-    echo "❌ Failed: $test_file"
-    echo "🔍 Output:"
+    test_fail "$test_file"
+    test_info "Captured output:"
     cat "$LOG_FILE"
     ((FAIL+=1))
   fi
@@ -34,12 +37,12 @@ for test_file in tests/test-*.sh; do
   echo
 done
 
-echo "🔍 Results: $PASS passed, $FAIL failed"
+test_info "Results: $PASS passed, $FAIL failed"
 
 if [[ "$FAIL" -gt 0 ]]; then
-  echo "❗ One or more tests failed"
+  test_fail "One or more tests failed"
   exit 1
 else
-  echo "🎉 All tests passed!"
+  test_pass "All tests passed"
   exit 0
 fi

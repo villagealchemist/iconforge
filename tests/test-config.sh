@@ -7,11 +7,11 @@ source ./lib/iconforge/common.sh
 source ./lib/iconforge/config.sh
 
 assert_equals() {
-  [[ "$1" == "$2" ]] || { echo "❌ Expected '$1' == '$2'"; exit 1; }
+  [[ "$1" == "$2" ]] || { test_fail "Expected '$1' == '$2'"; exit 1; }
 }
 
 assert_contains() {
-  [[ "$1" == *"$2"* ]] || { echo "❌ Expected output to contain '$2'"; exit 1; }
+  [[ "$1" == *"$2"* ]] || { test_fail "Expected output to contain '$2'"; exit 1; }
 }
 
 CONFIG_HOME="$TEST_DIR/home"
@@ -79,7 +79,7 @@ assert_equals "$resolved_root" "$CONFIG_HOME/from-cli"
 unset ICONFORGE_ICON_ROOT
 ICONFORGE_CONFIG_ICON_ROOT=""
 if resolve_icon_root "" >/dev/null; then
-  echo "❌ Missing icon-root configuration should fail"
+  test_fail "Missing icon-root configuration should fail"
   exit 1
 fi
 
@@ -105,7 +105,7 @@ set +e
 config_load "$BAD_CONFIG"
 STATUS=$?
 set -e
-[[ "$STATUS" -ne 0 ]] || { echo "❌ Invalid strategy should fail"; exit 1; }
+[[ "$STATUS" -ne 0 ]] || { test_fail "Invalid strategy should fail"; exit 1; }
 assert_contains "$ICONFORGE_CONFIG_ERROR" "Invalid strategy"
 
-echo "🎉 $TEST_NAME passed"
+test_pass "$TEST_NAME passed"

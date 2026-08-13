@@ -11,15 +11,15 @@ OUTPUT="$TEST_DIR/output.log"
 assert_status() {
   local expected="$1"
   local actual="$2"
-  [[ "$actual" -eq "$expected" ]] || { echo "❌ Expected exit status $expected, got $actual"; exit 1; }
+  [[ "$actual" -eq "$expected" ]] || { test_fail "Expected exit status $expected, got $actual"; exit 1; }
 }
 
 assert_output_contains() {
   local needle="$1"
-  grep -F "$needle" "$OUTPUT" >/dev/null || { echo "❌ Expected helper output to contain '$needle'"; exit 1; }
+  grep -F "$needle" "$OUTPUT" >/dev/null || { test_fail "Expected helper output to contain '$needle'"; exit 1; }
 }
 
-[[ -x "$HELPER" ]] || { echo "❌ Native icon helper is not built: $HELPER"; exit 1; }
+[[ -x "$HELPER" ]] || { test_fail "Native icon helper is not built: $HELPER"; exit 1; }
 
 mkdir -p "$APP/Contents"
 cp /dev/null "$APP/Contents/Info.plist"
@@ -59,4 +59,4 @@ set -e
 assert_status 1 "$STATUS"
 assert_output_contains "no usable Finder custom icon is set"
 
-echo "🎉 $TEST_NAME passed"
+test_pass "$TEST_NAME passed"

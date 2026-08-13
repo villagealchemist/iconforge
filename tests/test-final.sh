@@ -4,7 +4,7 @@ set -euo pipefail
 TEST_NAME="final integration test"
 source tests/test-common.sh
 
-echo "🧪 Test: $TEST_NAME"
+test_run "$TEST_NAME"
 
 "$ICONFORGE" "$TEST_IMAGE1" "$TEST_IMAGE2" -o "$TEST_DIR" -k
 
@@ -16,4 +16,4 @@ assert_file_exists "$TEST_DIR/$safe2.icns"
 assert_file_exists "$TEST_DIR/$safe1.png"
 assert_file_exists "$TEST_DIR/$safe2.png"
 
-echo "🎉 $TEST_NAME passed"
+test_pass "$TEST_NAME passed"

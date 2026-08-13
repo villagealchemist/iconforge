@@ -4,7 +4,7 @@ set -euo pipefail
 TEST_NAME="recursive directory scan"
 source tests/test-common.sh
 
-echo "🧪 Test: $TEST_NAME"
+test_run "$TEST_NAME"
 
 IMG_DIR="$TEST_DIR/assets"
 mkdir -p "$IMG_DIR"
@@ -16,4 +16,4 @@ cp "$TEST_IMAGE2" "$IMG_DIR/sample2.jpg"
 assert_file_exists "$TEST_DIR/sample1.icns"
 assert_file_exists "$TEST_DIR/sample2.icns"
 
-echo "🎉 $TEST_NAME passed"
+test_pass "$TEST_NAME passed"

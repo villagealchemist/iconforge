@@ -18,7 +18,7 @@ assert_file_exists "$INSTALL_PREFIX/lib/iconforge/iconforge-processor/iconforge-
 assert_file_exists "$INSTALL_PREFIX/lib/iconforge/iconforge-native-icon/iconforge-native-icon"
 
 [[ "$("$INSTALL_PREFIX/bin/iconforge" --version)" == "iconforge v$EXPECTED_VERSION" ]] || {
-  echo "❌ Installed launcher reported the wrong version"
+  test_fail "Installed launcher reported the wrong version"
   exit 1
 }
 
@@ -27,18 +27,18 @@ INSTALL_FORGE_OUTPUT="$TEST_DIR/forged"
 assert_file_exists "$INSTALL_FORGE_OUTPUT/i-just-wanna-be-an-icon.icns"
 
 PREFIX="$INSTALL_PREFIX" ./uninstall.sh >>"$OUTPUT" 2>&1
-[[ ! -e "$INSTALL_PREFIX/bin/iconforge" ]] || { echo "❌ Launcher survived uninstall"; exit 1; }
-[[ ! -e "$INSTALL_PREFIX/lib/iconforge" ]] || { echo "❌ Runtime survived uninstall"; exit 1; }
+[[ ! -e "$INSTALL_PREFIX/bin/iconforge" ]] || { test_fail "Launcher survived uninstall"; exit 1; }
+[[ ! -e "$INSTALL_PREFIX/lib/iconforge" ]] || { test_fail "Runtime survived uninstall"; exit 1; }
 
 INVALID_PREFIX="$TEST_DIR/not-a-directory"
 : >"$INVALID_PREFIX"
 if PREFIX="$INVALID_PREFIX" ./install.sh >"$OUTPUT" 2>&1; then
-  echo "❌ Installer accepted a file as PREFIX"
+  test_fail "Installer accepted a file as PREFIX"
   exit 1
 fi
 grep -q "install prefix exists but is not a directory" "$OUTPUT" || {
-  echo "❌ Installer did not explain the invalid prefix"
+  test_fail "Installer did not explain the invalid prefix"
   exit 1
 }
 
-echo "🎉 $TEST_NAME passed"
+test_pass "$TEST_NAME passed"

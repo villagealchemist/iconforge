@@ -14,24 +14,51 @@ import (
 
 var releaseVersion string
 
+const (
+	testColorGreen  = "\x1b[32m"
+	testColorRed    = "\x1b[31m"
+	testColorCyan   = "\x1b[36m"
+	testColorYellow = "\x1b[33m"
+	testColorReset  = "\x1b[0m"
+)
+
+func testSymbol(label string) string {
+	switch label {
+	case "PASS":
+		return "✓"
+	case "FAIL":
+		return "✗"
+	case "RUN":
+		return "▸"
+	case "SKIP":
+		return "○"
+	case "INFO":
+		return "ⓘ"
+	default:
+		return "·"
+	}
+}
+
+func testStatus(color, label, message string) string {
+	return fmt.Sprintf("%s%s [%s]%s %s", color, testSymbol(label), label, testColorReset, message)
+}
+
 // prettyTestStart sets up consistent logging for each test
 func prettyTestStart(t *testing.T, name string) {
 	t.Helper()
-	t.Logf("▶️  %s", name)
+	t.Log(testStatus(testColorCyan, "RUN", name))
 	t.Cleanup(func() {
 		if t.Failed() {
-			// mark as failed
-			t.Logf("❌ Failed: %s", name)
+			t.Log(testStatus(testColorRed, "FAIL", name))
 		} else {
-			// mark as passed
-			t.Logf("✅ Passed: %s", name)
+			t.Log(testStatus(testColorGreen, "PASS", name))
 		}
 	})
 }
 
 // TestMain runs before all other tests
 func TestMain(m *testing.M) {
-	fmt.Println("🧪 Running iconforge-processor Go tests...")
+	fmt.Println(testStatus(testColorCyan, "RUN", "Running iconforge-processor Go tests"))
 
 	// Build the binary for integration tests
 	versionBytes, err := os.ReadFile(filepath.Join("..", "VERSION"))
@@ -50,9 +77,9 @@ func TestMain(m *testing.M) {
 	_ = os.Remove("iconforge-processor-test")
 
 	if code != 0 {
-		fmt.Println("❗ One or more tests failed")
+		fmt.Println(testStatus(testColorRed, "FAIL", "One or more tests failed"))
 	} else {
-		fmt.Println("🎉 All tests passed!")
+		fmt.Println(testStatus(testColorGreen, "PASS", "All tests passed"))
 	}
 	os.Exit(code)
 }
@@ -69,6 +96,28 @@ func TestVersionCommand(t *testing.T) {
 	expected := "iconforge-processor v" + releaseVersion
 	if string(output) != expected+"\n" {
 		t.Errorf("Expected %q, got %q", expected, string(output))
+	}
+}
+
+func TestStatusOutputIsColoredAndReadable(t *testing.T) {
+	prettyTestStart(t, "colored status output")
+	testCases := []struct {
+		color    string
+		label    string
+		expected string
+	}{
+		{testColorGreen, "PASS", "\x1b[32m✓ [PASS]\x1b[0m example"},
+		{testColorRed, "FAIL", "\x1b[31m✗ [FAIL]\x1b[0m example"},
+		{testColorCyan, "RUN", "\x1b[36m▸ [RUN]\x1b[0m example"},
+		{testColorYellow, "SKIP", "\x1b[33m○ [SKIP]\x1b[0m example"},
+		{testColorCyan, "INFO", "\x1b[36mⓘ [INFO]\x1b[0m example"},
+	}
+
+	for _, tc := range testCases {
+		status := testStatus(tc.color, tc.label, "example")
+		if status != tc.expected {
+			t.Errorf("unexpected %s status output %q", tc.label, status)
+		}
 	}
 }
 

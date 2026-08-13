@@ -34,8 +34,8 @@ assert_file_exists "$OUTPUT_ONE/shared.icns"
 assert_file_exists "$OUTPUT_TWO/shared.icns"
 
 if find "$TEMP_ROOT" -mindepth 1 -print -quit | grep -q .; then
-  echo "❌ Forge left temporary conversion files behind"
+  test_fail "Forge left temporary conversion files behind"
   exit 1
 fi
 
-echo "🎉 $TEST_NAME passed"
+test_pass "$TEST_NAME passed"
