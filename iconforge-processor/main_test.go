@@ -2,7 +2,9 @@ package main
 
 import (
 	"bytes"
+	"encoding/binary"
 	"fmt"
+	"image/png"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -132,9 +134,87 @@ func TestCreateICNS(t *testing.T) {
 	if declaredLength != len(data) {
 		t.Fatalf("declared length %d, actual length %d", declaredLength, len(data))
 	}
-	for _, chunkType := range []string{"icp4", "icp5", "icp6", "ic07", "ic08", "ic09", "ic10"} {
-		if !bytes.Contains(data, []byte(chunkType)) {
-			t.Errorf("missing %s chunk", chunkType)
+	expectedChunks := []struct {
+		chunkType string
+		size      int
+	}{
+		{"icp4", 16},
+		{"ic11", 32},
+		{"icp5", 32},
+		{"ic12", 64},
+		{"ic07", 128},
+		{"ic13", 256},
+		{"ic08", 256},
+		{"ic14", 512},
+		{"ic09", 512},
+		{"ic10", 1024},
+	}
+	offset := 8
+	for _, expected := range expectedChunks {
+		if offset+8 > len(data) {
+			t.Fatalf("missing %s chunk", expected.chunkType)
+		}
+		chunkType := string(data[offset : offset+4])
+		chunkLength := int(binary.BigEndian.Uint32(data[offset+4 : offset+8]))
+		if chunkType != expected.chunkType {
+			t.Fatalf("expected %s chunk, got %s", expected.chunkType, chunkType)
+		}
+		if chunkLength < 8 || offset+chunkLength > len(data) {
+			t.Fatalf("invalid %s chunk length %d", chunkType, chunkLength)
+		}
+		config, err := png.DecodeConfig(bytes.NewReader(data[offset+8 : offset+chunkLength]))
+		if err != nil {
+			t.Fatalf("decode %s chunk: %v", chunkType, err)
+		}
+		if config.Width != expected.size || config.Height != expected.size {
+			t.Errorf("%s chunk is %dx%d, expected %dx%d", chunkType, config.Width, config.Height, expected.size, expected.size)
+		}
+		offset += chunkLength
+	}
+	if offset != len(data) {
+		t.Fatalf("unexpected data after final chunk: %d bytes", len(data)-offset)
+	}
+}
+
+func TestCreateICNSRoundTripsThroughIconutil(t *testing.T) {
+	prettyTestStart(t, "ICNS iconset round trip")
+	if _, err := exec.LookPath("iconutil"); err != nil {
+		t.Skip("iconutil is unavailable")
+	}
+
+	tempDir := t.TempDir()
+	sizes := []int{16, 32, 64, 128, 256, 512, 1024}
+	inputs := make([]string, 0, len(sizes))
+	for _, size := range sizes {
+		path := filepath.Join(tempDir, fmt.Sprintf("%d.png", size))
+		createTestImage(t, size, size, path)
+		inputs = append(inputs, path)
+	}
+
+	icnsPath := filepath.Join(tempDir, "test.icns")
+	if err := createICNS(icnsPath, inputs); err != nil {
+		t.Fatalf("create ICNS: %v", err)
+	}
+	iconsetPath := filepath.Join(tempDir, "test.iconset")
+	if output, err := exec.Command("iconutil", "-c", "iconset", "-o", iconsetPath, icnsPath).CombinedOutput(); err != nil {
+		t.Fatalf("iconutil round trip: %v\n%s", err, output)
+	}
+
+	expectedFiles := []string{
+		"icon_16x16.png",
+		"icon_16x16@2x.png",
+		"icon_32x32.png",
+		"icon_32x32@2x.png",
+		"icon_128x128.png",
+		"icon_128x128@2x.png",
+		"icon_256x256.png",
+		"icon_256x256@2x.png",
+		"icon_512x512.png",
+		"icon_512x512@2x.png",
+	}
+	for _, name := range expectedFiles {
+		if _, err := os.Stat(filepath.Join(iconsetPath, name)); err != nil {
+			t.Errorf("missing round-tripped representation %s: %v", name, err)
 		}
 	}
 }

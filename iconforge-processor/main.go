@@ -84,13 +84,26 @@ func handleICNS() {
 }
 
 func createICNS(outputPath string, inputPaths []string) error {
-	chunkTypes := []string{"icp4", "icp5", "icp6", "ic07", "ic08", "ic09", "ic10"}
 	expectedSizes := []int{16, 32, 64, 128, 256, 512, 1024}
-	if len(inputPaths) != len(chunkTypes) {
-		return fmt.Errorf("expected %d PNG inputs, got %d", len(chunkTypes), len(inputPaths))
+	representations := []struct {
+		chunkType  string
+		inputIndex int
+	}{
+		{"icp4", 0},
+		{"ic11", 1},
+		{"icp5", 1},
+		{"ic12", 2},
+		{"ic07", 3},
+		{"ic13", 4},
+		{"ic08", 4},
+		{"ic14", 5},
+		{"ic09", 5},
+		{"ic10", 6},
+	}
+	if len(inputPaths) != len(expectedSizes) {
+		return fmt.Errorf("expected %d PNG inputs, got %d", len(expectedSizes), len(inputPaths))
 	}
 
-	var payload bytes.Buffer
 	for i, inputPath := range inputPaths {
 		img, err := loadImage(inputPath)
 		if err != nil {
@@ -100,12 +113,15 @@ func createICNS(outputPath string, inputPaths []string) error {
 		if bounds.Dx() != expectedSizes[i] || bounds.Dy() != expectedSizes[i] {
 			return fmt.Errorf("%s must be %dx%d, got %dx%d", inputPath, expectedSizes[i], expectedSizes[i], bounds.Dx(), bounds.Dy())
 		}
+	}
 
-		pngData, err := os.ReadFile(inputPath)
+	var payload bytes.Buffer
+	for _, representation := range representations {
+		pngData, err := os.ReadFile(inputPaths[representation.inputIndex])
 		if err != nil {
-			return fmt.Errorf("read %s: %w", inputPath, err)
+			return fmt.Errorf("read %s: %w", inputPaths[representation.inputIndex], err)
 		}
-		payload.WriteString(chunkTypes[i])
+		payload.WriteString(representation.chunkType)
 		if err := binary.Write(&payload, binary.BigEndian, uint32(len(pngData)+8)); err != nil {
 			return err
 		}
