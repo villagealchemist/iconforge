@@ -2,7 +2,7 @@
 set -euo pipefail
 
 TEST_NAME="installer"
-source tests/test_common.sh
+source tests/test-common.sh
 
 INSTALL_PREFIX="$TEST_DIR/prefix"
 OUTPUT="$TEST_DIR/output.log"
@@ -24,7 +24,7 @@ assert_file_exists "$INSTALL_PREFIX/lib/iconforge/iconforge-native-icon/iconforg
 
 INSTALL_FORGE_OUTPUT="$TEST_DIR/forged"
 "$INSTALL_PREFIX/bin/iconforge" forge "$TEST_IMAGE1" --output "$INSTALL_FORGE_OUTPUT"
-assert_file_exists "$INSTALL_FORGE_OUTPUT/i_just_wanna_be_an_icon.icns"
+assert_file_exists "$INSTALL_FORGE_OUTPUT/i-just-wanna-be-an-icon.icns"
 
 PREFIX="$INSTALL_PREFIX" ./uninstall.sh >>"$OUTPUT" 2>&1
 [[ ! -e "$INSTALL_PREFIX/bin/iconforge" ]] || { echo "❌ Launcher survived uninstall"; exit 1; }

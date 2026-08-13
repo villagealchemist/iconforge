@@ -23,10 +23,10 @@ source "$SCRIPT_DIR/lib/iconforge/library.sh"
 source "$SCRIPT_DIR/lib/iconforge/discovery.sh"
 # shellcheck source=lib/iconforge/match.sh
 source "$SCRIPT_DIR/lib/iconforge/match.sh"
-# shellcheck source=lib/iconforge/strategy_internal_icns.sh
-source "$SCRIPT_DIR/lib/iconforge/strategy_internal_icns.sh"
-# shellcheck source=lib/iconforge/strategy_native_icon.sh
-source "$SCRIPT_DIR/lib/iconforge/strategy_native_icon.sh"
+# shellcheck source=lib/iconforge/strategy-internal-icns.sh
+source "$SCRIPT_DIR/lib/iconforge/strategy-internal-icns.sh"
+# shellcheck source=lib/iconforge/strategy-native-icon.sh
+source "$SCRIPT_DIR/lib/iconforge/strategy-native-icon.sh"
 # shellcheck source=lib/iconforge/strategy.sh
 source "$SCRIPT_DIR/lib/iconforge/strategy.sh"
 # shellcheck source=lib/iconforge/apps.sh

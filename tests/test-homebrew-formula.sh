@@ -2,7 +2,7 @@
 set -euo pipefail
 
 TEST_NAME="Homebrew formula runtime layout"
-source tests/test_common.sh
+source tests/test-common.sh
 
 FORMULA="$TEST_DIR/iconforge.rb"
 VERSION_VALUE="$(tr -d '[:space:]' < VERSION)"

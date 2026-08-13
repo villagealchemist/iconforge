@@ -2,7 +2,7 @@
 set -euo pipefail
 
 TEST_NAME="complete command help"
-source tests/test_common.sh
+source tests/test-common.sh
 
 ROOT_DIR="$(pwd)"
 ICONFORGE_BIN="$ROOT_DIR/iconforge.sh"

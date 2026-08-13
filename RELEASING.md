@@ -80,8 +80,8 @@ The repositories can drift independently, so do not describe a 2.x Homebrew inst
    brew test villagealchemist/iconforge/iconforge
    iconforge --version
    rm -rf /tmp/iconforge-release-smoke
-   iconforge forge /path/to/iconforge/assets/iconforge_logo.png --output /tmp/iconforge-release-smoke
-   test -f /tmp/iconforge-release-smoke/iconforge_logo.icns
+   iconforge forge /path/to/iconforge/assets/iconforge-logo.png --output /tmp/iconforge-release-smoke
+   test -f /tmp/iconforge-release-smoke/iconforge-logo.icns
    ```
 
 12. Commit and push the tested tap formula. Verify the public path in a fresh shell:
@@ -93,8 +93,8 @@ The repositories can drift independently, so do not describe a 2.x Homebrew inst
    brew install villagealchemist/iconforge/iconforge
    iconforge --version
    rm -rf /tmp/iconforge-release-smoke
-   iconforge forge /path/to/iconforge/assets/iconforge_logo.png --output /tmp/iconforge-release-smoke
-   test -f /tmp/iconforge-release-smoke/iconforge_logo.icns
+   iconforge forge /path/to/iconforge/assets/iconforge-logo.png --output /tmp/iconforge-release-smoke
+   test -f /tmp/iconforge-release-smoke/iconforge-logo.icns
    brew test villagealchemist/iconforge/iconforge
    ```
 

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 TEST_NAME="concurrent forge temp isolation"
-source tests/test_common.sh
+source tests/test-common.sh
 
 SOURCE_ONE="$TEST_DIR/source-one"
 SOURCE_TWO="$TEST_DIR/source-two"

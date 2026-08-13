@@ -2,7 +2,7 @@
 set -euo pipefail
 
 TEST_NAME="apply strategy selection and safety"
-source tests/test_common.sh
+source tests/test-common.sh
 
 ROOT_DIR="$(pwd)"
 ROOT_ICONFORGE="$ROOT_DIR/iconforge.sh"

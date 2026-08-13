@@ -2,7 +2,7 @@
 set -euo pipefail
 
 TEST_NAME="invalid output directory"
-source tests/test_common.sh
+source tests/test-common.sh
 
 echo "🧪 Test: $TEST_NAME"
 

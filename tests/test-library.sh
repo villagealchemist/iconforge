@@ -2,7 +2,7 @@
 set -euo pipefail
 
 TEST_NAME="icon library resolution"
-source tests/test_common.sh
+source tests/test-common.sh
 source ./lib/iconforge/common.sh
 source ./lib/iconforge/library.sh
 

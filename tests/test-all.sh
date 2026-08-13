@@ -9,9 +9,9 @@ mkdir -p tmp  # ensure temp log dir exists
 PASS=0
 FAIL=0
 
-for test_file in tests/test_*.sh; do
+for test_file in tests/test-*.sh; do
   case "$test_file" in
-    *test_all.sh|*test_common.sh|*test_env.sh)
+    *test-all.sh|*test-common.sh|*test-env.sh)
       echo "⏩ Skipping meta script: $test_file"
       continue
       ;;

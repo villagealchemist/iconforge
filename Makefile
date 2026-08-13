@@ -10,7 +10,7 @@ TEST_DIR := tests
 VERSION := $(shell tr -d '[:space:]' < VERSION)
 GO_LDFLAGS := -s -w -X main.version=$(VERSION)
 PREFIX ?= $(HOME)/.local
-SHELL_TESTS := $(filter-out $(TEST_DIR)/test_all.sh $(TEST_DIR)/test_common.sh $(TEST_DIR)/test_env.sh,$(wildcard $(TEST_DIR)/test_*.sh))
+SHELL_TESTS := $(filter-out $(TEST_DIR)/test-all.sh $(TEST_DIR)/test-common.sh $(TEST_DIR)/test-env.sh,$(wildcard $(TEST_DIR)/test-*.sh))
 
 .PHONY: all
 all: build
@@ -75,13 +75,13 @@ test-go:
 
 .PHONY: test
 test: build test-go
-	@bash $(TEST_DIR)/test_all.sh
+	@bash $(TEST_DIR)/test-all.sh
 
 .PHONY: test-verbose
 test-verbose: build
-	@for test in $(TEST_DIR)/test_*.sh; do \
+	@for test in $(TEST_DIR)/test-*.sh; do \
 		case $$test in \
-			*test_all.sh|*test_common.sh|*test_env.sh) continue ;; \
+			*test-all.sh|*test-common.sh|*test-env.sh) continue ;; \
 		esac; \
 		echo "Running $$test"; \
 		bash $$test; \

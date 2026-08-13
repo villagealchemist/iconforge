@@ -2,10 +2,10 @@
 set -euo pipefail
 
 ICONFORGE="./iconforge.sh"
-TEST_IMAGE1="tests/i_just_wanna_be_an_icon.png"
-TEST_IMAGE2="tests/pls_oh_pls_convert_me_to_icns.jpg"
+TEST_IMAGE1="tests/i-just-wanna-be-an-icon.png"
+TEST_IMAGE2="tests/pls-oh-pls-convert-me-to-icns.jpg"
 
-: "${TEST_NAME:?TEST_NAME must be set before sourcing test_common.sh}"
+: "${TEST_NAME:?TEST_NAME must be set before sourcing test-common.sh}"
 
 # Generate a consistent, lowercase, underscore-safe temp dir name
 TEST_DIR="tests/tmp_$(echo "$TEST_NAME" | tr '[:upper:] ' '[:lower:]_')"

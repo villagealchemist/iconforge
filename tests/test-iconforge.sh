@@ -2,7 +2,7 @@
 set -euo pipefail
 
 TEST_NAME="basic single image with override"
-source tests/test_common.sh
+source tests/test-common.sh
 
 OVERRIDE="MyIcon"
 ICNS="$TEST_DIR/$OVERRIDE.icns"

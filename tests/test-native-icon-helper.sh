@@ -2,7 +2,7 @@
 set -euo pipefail
 
 TEST_NAME="native icon helper interface"
-source tests/test_common.sh
+source tests/test-common.sh
 
 HELPER="$(pwd)/iconforge-native-icon/iconforge-native-icon"
 APP="$TEST_DIR/Helper Test.app"

@@ -33,7 +33,7 @@ jobs:
         run: make build-all
 
       - name: Validate generated Homebrew formula integration contract
-        run: bash tests/test_homebrew_formula.sh
+        run: bash tests/test-homebrew-formula.sh
 
       - name: Confirm checks left the tree unchanged
         run: git diff --exit-code
