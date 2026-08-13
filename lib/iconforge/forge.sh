@@ -2,20 +2,39 @@
 
 forge_help() {
   cat <<EOF
+Forge macOS .icns files from source images.
+
 Usage:
-  iconforge forge <input_image(s)> [output_name] [options]
-  iconforge <input_image(s)> [output_name] [options]
+  iconforge forge <input-image> [output-name] [options]
+  iconforge forge <input-image>... [options]
+  iconforge forge <directory> -r [options]
+  iconforge <input-image> [output-name] [options]
+
+Arguments:
+  <input-image>     PNG, JPEG, WebP, TIFF, or GIF source image
+  [output-name]     Optional basename for a single output; the extension is omitted
+  <directory>       Directory to scan when -r/--recursive is used
 
 Options:
-  -o, --output PATH     Set output directory
-  -k, --keep-png        Preserve the converted PNG alongside the .icns
-  -r, --recursive       Recursively process supported images in a directory
-      --no-warnings     Skip the small-image confirmation prompt
-      --dry-run         Print planned work without writing files
-  -h, --help            Show forge help
+  -o, --output <dir>    Write outputs to <dir>; default: current directory
+  -k, --keep-png        Keep the normalized PNG beside each generated .icns
+  -r, --recursive       Recursively find supported images below <directory>
+  -q, --no-warnings     Do not prompt before processing an image below 512x512
+  -n, --dry-run         Print planned commands without creating output files
+  -V, --version         Show the Icon Forge version
+  -h, --help            Show this help
 
 Supported input formats:
   png, jpg, jpeg, webp, tiff, tif, gif
+
+Output:
+  <output-dir>/<output-name>.icns
+  <output-dir>/<output-name>.png     only with -k/--keep-png
+
+Examples:
+  iconforge forge ./messages.png google-messages -o ./icons
+  iconforge forge ./photos --recursive --output ./icons
+  iconforge ./logo.png BrandMark -o ./dist --keep-png
 EOF
 }
 
@@ -128,6 +147,7 @@ process_forge_file() {
   local base
   local base_safe
   local abs_input
+  local tmp_root=""
   local tmp_png=""
   local src_png
   local dimensions=""
@@ -156,6 +176,8 @@ process_forge_file() {
   local spec_h
   local spec_name
 
+  trap '[[ -n "${tmp_png:-}" && -f "${tmp_png:-}" ]] && rm -f "${tmp_png:-}"' RETURN
+
   ext_lc="$(printf '%s' "$ext" | tr '[:upper:]' '[:lower:]')"
   case "$ext_lc" in
     png|jpg|jpeg|webp|tiff|tif|gif) ;;
@@ -181,10 +203,16 @@ process_forge_file() {
 
   abs_input="$(realpath "$input")"
   if [[ "$ext_lc" != "png" ]]; then
-    tmp_png="${ICONFORGE_TMP_DIR:-/tmp}/iconforge_${base_safe}.png"
+    tmp_root="${ICONFORGE_TMP_DIR:-/tmp}"
     if [[ "$ICONFORGE_DRY_RUN" == true ]]; then
+      tmp_png="${tmp_root%/}/iconforge_${base_safe}.dry-run.png"
       run_cmd "$ICONFORGE_PROCESSOR" convert "$abs_input" "$tmp_png"
     else
+      [[ -d "$tmp_root" ]] || { fail "Temporary directory not found: $tmp_root" || return 1; }
+      [[ -w "$tmp_root" ]] || { fail "Temporary directory is not writable: $tmp_root" || return 1; }
+      tmp_png="$(mktemp "${tmp_root%/}/iconforge_${base_safe}.XXXXXX")" || {
+        fail "Could not create a temporary PNG under $tmp_root" || return 1
+      }
       "$ICONFORGE_PROCESSOR" convert "$abs_input" "$tmp_png" || {
         warn "Failed to convert $input to PNG"
         return 1
@@ -230,19 +258,31 @@ process_forge_file() {
   [[ "$size_errors" -gt 0 ]] && warn "$size_errors icon sizes failed to generate for $base_safe"
 
   if [[ "$ICONFORGE_DRY_RUN" == true ]]; then
-    run_cmd "$ICONUTIL_BIN" -c icns "$iconset_dir" -o "$icns_path"
+    run_cmd "$ICONFORGE_PROCESSOR" icns "$icns_path" \
+      "$iconset_dir/icon_16x16.png" \
+      "$iconset_dir/icon_32x32.png" \
+      "$iconset_dir/icon_32x32@2x.png" \
+      "$iconset_dir/icon_128x128.png" \
+      "$iconset_dir/icon_256x256.png" \
+      "$iconset_dir/icon_512x512.png" \
+      "$iconset_dir/icon_512x512@2x.png"
   else
-    "$ICONUTIL_BIN" -c icns "$iconset_dir" -o "$icns_path" >/dev/null 2>&1 || {
-      warn "iconutil failed for $base_safe"
+    "$ICONFORGE_PROCESSOR" icns "$icns_path" \
+      "$iconset_dir/icon_16x16.png" \
+      "$iconset_dir/icon_32x32.png" \
+      "$iconset_dir/icon_32x32@2x.png" \
+      "$iconset_dir/icon_128x128.png" \
+      "$iconset_dir/icon_256x256.png" \
+      "$iconset_dir/icon_512x512.png" \
+      "$iconset_dir/icon_512x512@2x.png" >/dev/null 2>&1 || {
+      warn "ICNS assembly failed for $base_safe"
       rm -rf "$iconset_dir"
-      [[ -n "$tmp_png" && -f "$tmp_png" ]] && rm -f "$tmp_png"
       return 1
     }
   fi
 
   if [[ "$ICONFORGE_DRY_RUN" != true ]]; then
     rm -rf "$iconset_dir"
-    [[ -n "$tmp_png" && -f "$tmp_png" ]] && rm -f "$tmp_png"
   fi
 
   printf 'Created: %s\n' "$icns_path"
@@ -260,6 +300,7 @@ cmd_forge() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       -o|--output)
+        [[ $# -ge 2 ]] || { fail "$1 requires an output directory"; return 1; }
         CUSTOM_OUTPUT="$2"
         shift 2
         ;;
@@ -271,11 +312,11 @@ cmd_forge() {
         RECURSIVE=true
         shift
         ;;
-      --no-warnings)
+      -q|--no-warnings)
         SUPPRESS_WARNINGS=true
         shift
         ;;
-      --dry-run)
+      -n|--dry-run)
         ICONFORGE_DRY_RUN=true
         shift
         ;;
@@ -283,7 +324,7 @@ cmd_forge() {
         forge_help
         return 0
         ;;
-      --version)
+      -V|--version)
         printf 'iconforge v%s\n' "$ICONFORGE_VERSION"
         return 0
         ;;
@@ -305,7 +346,6 @@ cmd_forge() {
   done
 
   require_processor || return 1
-  require_tool "$ICONUTIL_BIN" "Missing required tool: iconutil"
   collect_forge_inputs || return 1
 
   local errors=0

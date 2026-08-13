@@ -1,6 +1,8 @@
 package main
 
 import (
+	"bytes"
+	"encoding/binary"
 	"fmt"
 	"image"
 	"image/gif"
@@ -13,6 +15,7 @@ import (
 	"strings"
 
 	"golang.org/x/image/draw"
+	_ "golang.org/x/image/tiff"
 	"golang.org/x/image/webp"
 )
 
@@ -30,6 +33,8 @@ func main() {
 		handleResize()
 	case "convert":
 		handleConvert()
+	case "icns":
+		handleICNS()
 	case "version":
 		fmt.Printf("iconforge-processor v%s\n", version)
 	case "info":
@@ -62,8 +67,58 @@ func printUsage() {
 	fmt.Println("Usage:")
 	fmt.Println("  iconforge-processor resize <input> <width> <height> <output>")
 	fmt.Println("  iconforge-processor convert <input> <output>")
+	fmt.Println("  iconforge-processor icns <output> <16.png> <32.png> <64.png> <128.png> <256.png> <512.png> <1024.png>")
 	fmt.Println("  iconforge-processor info <input>")
 	fmt.Println("  iconforge-processor version")
+}
+
+func handleICNS() {
+	if len(os.Args) != 10 {
+		fmt.Println("Usage: iconforge-processor icns <output> <16.png> <32.png> <64.png> <128.png> <256.png> <512.png> <1024.png>")
+		os.Exit(1)
+	}
+
+	if err := createICNS(os.Args[2], os.Args[3:]); err != nil {
+		log.Fatalf("Failed to create ICNS: %v", err)
+	}
+}
+
+func createICNS(outputPath string, inputPaths []string) error {
+	chunkTypes := []string{"icp4", "icp5", "icp6", "ic07", "ic08", "ic09", "ic10"}
+	expectedSizes := []int{16, 32, 64, 128, 256, 512, 1024}
+	if len(inputPaths) != len(chunkTypes) {
+		return fmt.Errorf("expected %d PNG inputs, got %d", len(chunkTypes), len(inputPaths))
+	}
+
+	var payload bytes.Buffer
+	for i, inputPath := range inputPaths {
+		img, err := loadImage(inputPath)
+		if err != nil {
+			return fmt.Errorf("load %s: %w", inputPath, err)
+		}
+		bounds := img.Bounds()
+		if bounds.Dx() != expectedSizes[i] || bounds.Dy() != expectedSizes[i] {
+			return fmt.Errorf("%s must be %dx%d, got %dx%d", inputPath, expectedSizes[i], expectedSizes[i], bounds.Dx(), bounds.Dy())
+		}
+
+		pngData, err := os.ReadFile(inputPath)
+		if err != nil {
+			return fmt.Errorf("read %s: %w", inputPath, err)
+		}
+		payload.WriteString(chunkTypes[i])
+		if err := binary.Write(&payload, binary.BigEndian, uint32(len(pngData)+8)); err != nil {
+			return err
+		}
+		payload.Write(pngData)
+	}
+
+	var output bytes.Buffer
+	output.WriteString("icns")
+	if err := binary.Write(&output, binary.BigEndian, uint32(payload.Len()+8)); err != nil {
+		return err
+	}
+	output.Write(payload.Bytes())
+	return os.WriteFile(outputPath, output.Bytes(), 0644)
 }
 
 func handleResize() {

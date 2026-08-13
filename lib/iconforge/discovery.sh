@@ -13,7 +13,10 @@ normalize_match_token() {
 }
 
 discover_applications() {
-  local search_roots=("$HOME/Applications" "/Applications")
+  local search_roots=(
+    "${ICONFORGE_USER_APPLICATIONS_DIR:-$HOME/Applications}"
+    "${ICONFORGE_SYSTEM_APPLICATIONS_DIR:-/Applications}"
+  )
   local search_root
   local app_path
   local info_plist

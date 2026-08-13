@@ -12,13 +12,12 @@ fi
 
 ICONFORGE_ROOT="${ICONFORGE_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
 ICONFORGE_PROCESSOR="${ICONFORGE_PROCESSOR:-$ICONFORGE_ROOT/iconforge-processor/iconforge-processor}"
+ICONFORGE_NATIVE_ICON="${ICONFORGE_NATIVE_ICON:-$ICONFORGE_ROOT/iconforge-native-icon/iconforge-native-icon}"
 ICONFORGE_VERSION="$(<"$ICONFORGE_ROOT/VERSION")"
 
 PLIST_BUDDY_BIN="${ICONFORGE_PLIST_BUDDY_BIN:-/usr/libexec/PlistBuddy}"
 PLUTIL_BIN="${ICONFORGE_PLUTIL_BIN:-/usr/bin/plutil}"
 CODESIGN_BIN="${ICONFORGE_CODESIGN_BIN:-codesign}"
-FILEICON_BIN="${ICONFORGE_FILEICON_BIN:-fileicon}"
-ICONUTIL_BIN="${ICONFORGE_ICONUTIL_BIN:-iconutil}"
 TOUCH_BIN="${ICONFORGE_TOUCH_BIN:-touch}"
 KILLALL_BIN="${ICONFORGE_KILLALL_BIN:-killall}"
 RM_BIN="${ICONFORGE_RM_BIN:-rm}"
@@ -33,9 +32,18 @@ KEEP_PNG="${KEEP_PNG:-false}"
 RECURSIVE="${RECURSIVE:-false}"
 SUPPRESS_WARNINGS="${SUPPRESS_WARNINGS:-false}"
 
-[[ -f "$PROJECT_CONFIG" ]] && source "$PROJECT_CONFIG"
-[[ -f "$LOCAL_CONFIG" ]] && source "$LOCAL_CONFIG"
-[[ -f "$CONFIG_FILE" ]] && source "$CONFIG_FILE"
+if [[ -f "$PROJECT_CONFIG" ]]; then
+  # shellcheck source=/dev/null
+  source "$PROJECT_CONFIG"
+fi
+if [[ -f "$LOCAL_CONFIG" ]]; then
+  # shellcheck source=/dev/null
+  source "$LOCAL_CONFIG"
+fi
+if [[ -f "$CONFIG_FILE" ]]; then
+  # shellcheck source=/dev/null
+  source "$CONFIG_FILE"
+fi
 
 ICONFORGE_DRY_RUN=false
 
@@ -303,7 +311,6 @@ resolve_icon_target_from_candidates() {
 
 inspect_app_metadata() {
   local input="$1"
-  local resolved
   local value
   local candidate_names=()
   local line
@@ -368,7 +375,29 @@ resign_app_bundle() {
 
   require_app_bundle_path "$app_path" || return 1
   require_tool "$CODESIGN_BIN" "Missing required tool: codesign"
-  run_cmd "$CODESIGN_BIN" --force --deep --sign - "$app_path"
+  run_cmd "$CODESIGN_BIN" --force --deep --sign - "$app_path" || return 1
+
+  if [[ "$ICONFORGE_DRY_RUN" != true ]]; then
+    "$CODESIGN_BIN" --verify --deep --strict --all-architectures "$app_path" || {
+      fail "Ad hoc signature verification failed for $app_path" || return 1
+    }
+  fi
+}
+
+app_bundle_team_identifier() {
+  local app_path="$1"
+
+  require_app_bundle_path "$app_path" || return 1
+  "$CODESIGN_BIN" -dv --verbose=4 "$app_path" 2>&1 | awk -F= '/^TeamIdentifier=/{print $2; exit}'
+}
+
+app_bundle_is_vendor_signed() {
+  local app_path="$1"
+  local team_identifier=""
+
+  command -v "$CODESIGN_BIN" >/dev/null 2>&1 || return 1
+  team_identifier="$(app_bundle_team_identifier "$app_path" || true)"
+  [[ -n "$team_identifier" && "$team_identifier" != "not set" ]]
 }
 
 touch_app_bundle() {

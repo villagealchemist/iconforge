@@ -2,7 +2,7 @@
 
 set -euo pipefail
 
-PREFIX="${PREFIX:-/usr/local}"
+PREFIX="${PREFIX:-$HOME/.local}"
 BIN_TARGET="$PREFIX/bin/iconforge"
 RUNTIME_DIR="$PREFIX/lib/iconforge"
 removed=0

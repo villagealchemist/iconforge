@@ -6,15 +6,20 @@ class Iconforge < Formula
   license "MIT"
 
   depends_on "go" => :build
+  depends_on :macos
 
   def install
     cd "iconforge-processor" do
       system "go", "build", "-ldflags", "-s -w -X main.version=#{version}", "-o", "iconforge-processor"
     end
+    system "xcrun", "clang", "-fobjc-arc", "-Wall", "-Wextra",
+           "-framework", "AppKit", "-framework", "Foundation",
+           "iconforge-native-icon/main.m", "-o", "iconforge-native-icon/iconforge-native-icon"
 
     libexec.install "VERSION"
     libexec.install "iconforge.sh" => "iconforge"
     libexec.install "iconforge-processor"
+    (libexec/"iconforge-native-icon").install "iconforge-native-icon/iconforge-native-icon"
     libexec.install "lib"
 
     (bin/"iconforge").write_env_script libexec/"iconforge", ICONFORGE_ROOT: libexec
@@ -23,5 +28,6 @@ class Iconforge < Formula
   test do
     assert_match "iconforge v#{version}", shell_output("#{bin}/iconforge --version")
     assert_match "iconforge-processor v#{version}", shell_output("#{libexec}/iconforge-processor version")
+    assert_match "usage:", shell_output("#{libexec}/iconforge-native-icon/iconforge-native-icon 2>&1", 64)
   end
 end

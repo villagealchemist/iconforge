@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"os"
 	"os/exec"
@@ -90,6 +91,7 @@ func TestMissingArguments(t *testing.T) {
 		{"resize missing args", []string{"resize"}},
 		{"resize partial args", []string{"resize", "input.png"}},
 		{"convert missing args", []string{"convert"}},
+		{"icns missing args", []string{"icns"}},
 	}
 
 	for _, tc := range testCases {
@@ -101,5 +103,38 @@ func TestMissingArguments(t *testing.T) {
 				t.Errorf("Expected %s to fail, but it succeeded", tc.name)
 			}
 		})
+	}
+}
+
+func TestCreateICNS(t *testing.T) {
+	prettyTestStart(t, "native ICNS assembly")
+	tempDir := t.TempDir()
+	sizes := []int{16, 32, 64, 128, 256, 512, 1024}
+	inputs := make([]string, 0, len(sizes))
+	for _, size := range sizes {
+		path := filepath.Join(tempDir, fmt.Sprintf("%d.png", size))
+		createTestImage(t, size, size, path)
+		inputs = append(inputs, path)
+	}
+
+	output := filepath.Join(tempDir, "test.icns")
+	if err := createICNS(output, inputs); err != nil {
+		t.Fatalf("create ICNS: %v", err)
+	}
+	data, err := os.ReadFile(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(data) < 8 || string(data[:4]) != "icns" {
+		t.Fatalf("invalid ICNS header")
+	}
+	declaredLength := int(data[4])<<24 | int(data[5])<<16 | int(data[6])<<8 | int(data[7])
+	if declaredLength != len(data) {
+		t.Fatalf("declared length %d, actual length %d", declaredLength, len(data))
+	}
+	for _, chunkType := range []string{"icp4", "icp5", "icp6", "ic07", "ic08", "ic09", "ic10"} {
+		if !bytes.Contains(data, []byte(chunkType)) {
+			t.Errorf("missing %s chunk", chunkType)
+		}
 	}
 }

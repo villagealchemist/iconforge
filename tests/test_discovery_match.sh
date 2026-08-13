@@ -38,20 +38,25 @@ EOF
 }
 
 HOME="$TEST_DIR/home"
-mkdir -p "$HOME/Applications" "/Applications"
+ICONFORGE_USER_APPLICATIONS_DIR="$HOME/Applications"
+ICONFORGE_SYSTEM_APPLICATIONS_DIR="$TEST_DIR/system-applications"
+mkdir -p "$ICONFORGE_USER_APPLICATIONS_DIR" "$ICONFORGE_SYSTEM_APPLICATIONS_DIR"
 
 create_fake_app "$HOME/Applications" "Visual Studio Code" "com.microsoft.VSCode" "Visual Studio Code" "Visual Studio Code"
 create_fake_app "$HOME/Applications" "Google Chrome" "com.google.Chrome" "Google Chrome" "Google Chrome"
 create_fake_app "$HOME/Applications" "Google Chrome Dev" "com.google.Chrome.dev" "Google Chrome Dev" "Google Chrome Dev"
+mkdir -p "$ICONFORGE_SYSTEM_APPLICATIONS_DIR/Adobe Photoshop 2026"
+create_fake_app "$ICONFORGE_SYSTEM_APPLICATIONS_DIR/Adobe Photoshop 2026" "Adobe Photoshop 2026" "com.adobe.Photoshop" "Adobe Photoshop 2026" "Adobe Photoshop 2026"
 
 discover_applications
 [[ "${#DISCOVERED_APP_RECORDS[@]}" -ge 3 ]] || { echo "❌ Expected discovered apps"; exit 1; }
 
-ICONFORGE_CONFIG_APPLICATION_KEYS=("code" "chrome" "chrome-dev" "ghost")
+ICONFORGE_CONFIG_APPLICATION_KEYS=("code" "chrome" "chrome-dev" "photoshop" "ghost")
 ICONFORGE_CONFIG_APP_ALIASES=(
   "code"$'\t'"Visual Studio Code"
   "chrome"$'\t'"Google Chrome"
   "chrome-dev"$'\t'"Google Chrome Dev"
+  "photoshop"$'\t'"Adobe Photoshop 2026"
   "ghost"$'\t'"Google"
 )
 ICONFORGE_CONFIG_APP_BUNDLE_IDS=(
@@ -67,6 +72,10 @@ assert_equals "$(discovered_app_bundle_id "$MATCH_RECORD")" "com.microsoft.VSCod
 match_configured_application "chrome-dev"
 assert_equals "$MATCH_STATUS" "matched-name"
 assert_equals "$(discovered_app_bundle_id "$MATCH_RECORD")" "com.google.Chrome.dev"
+
+match_configured_application "photoshop"
+assert_equals "$MATCH_STATUS" "matched-name"
+assert_equals "$(discovered_app_path "$MATCH_RECORD")" "$ICONFORGE_SYSTEM_APPLICATIONS_DIR/Adobe Photoshop 2026/Adobe Photoshop 2026.app"
 
 set +e
 match_configured_application "ghost"

@@ -16,4 +16,8 @@ mkdir -p "$TEST_DIR"
 assert_file_exists "$ICNS"
 assert_file_exists "$PNG"
 
+DRY_OUTPUT="$TEST_DIR/dry"
+"$ICONFORGE" forge "$TEST_IMAGE1" DryIcon -o "$DRY_OUTPUT" -q -n
+[[ ! -e "$DRY_OUTPUT/DryIcon.icns" ]] || { echo "❌ Forge dry-run created output"; exit 1; }
+
 echo "🎉 $TEST_NAME passed"

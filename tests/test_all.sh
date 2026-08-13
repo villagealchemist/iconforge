@@ -11,7 +11,7 @@ FAIL=0
 
 for test_file in tests/test_*.sh; do
   case "$test_file" in
-    *test_all.sh|*test_common.sh)
+    *test_all.sh|*test_common.sh|*test_env.sh)
       echo "⏩ Skipping meta script: $test_file"
       continue
       ;;

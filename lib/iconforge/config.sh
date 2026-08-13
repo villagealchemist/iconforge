@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
 
 ICONFORGE_CONFIG_PATH_DEFAULT="$HOME/.config/iconforge/config.plist"
-ICONFORGE_ICON_ROOT_DEFAULT="$HOME/alchemy/app_icons"
 
 ICONFORGE_CONFIG_PATH=""
 ICONFORGE_CONFIG_ICON_ROOT=""
@@ -20,6 +19,8 @@ expand_user_path() {
     return 0
   fi
 
+  # The quoted tilde is input syntax, not a request for shell expansion.
+  # shellcheck disable=SC2088
   if [[ "${raw_path:0:2}" == "~/" ]]; then
     printf '%s/%s\n' "$HOME" "${raw_path:2}"
     return 0
@@ -80,7 +81,7 @@ config_validate_strategy() {
   [[ -z "$strategy" ]] && return 0
 
   case "$strategy" in
-    auto|fileicon|internal-icns)
+    auto|native|fileicon|internal-icns)
       return 0
       ;;
     *)
@@ -242,5 +243,5 @@ resolve_icon_root() {
     return 0
   fi
 
-  printf '%s\n' "$ICONFORGE_ICON_ROOT_DEFAULT"
+  return 1
 }

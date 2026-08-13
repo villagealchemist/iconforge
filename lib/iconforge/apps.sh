@@ -2,49 +2,129 @@
 
 inspect_help() {
   cat <<EOF
+Inspect an application bundle's icon metadata without changing it.
+
 Usage:
   iconforge inspect <app>
 
-Inspect an app bundle's icon-related metadata and explain whether loose .icns
-replacement is likely to work.
+Arguments:
+  <app>       App name or path to an .app bundle. Names are searched in the
+              current directory, ~/Applications, /Applications, and
+              /System/Applications.
+
+Options:
+  -h, --help  Show this help
+
+Output includes the resolved bundle, icon plist keys, Assets.car files, loose
+.icns target, and whether Icon Forge considers the app asset-catalog backed.
+
+Examples:
+  iconforge inspect "Google Messages"
+  iconforge inspect "/Applications/Google Chrome.app"
 EOF
 }
 
 apply_help() {
   cat <<EOF
+Apply custom icons directly or reconcile a managed icon library.
+
 Usage:
-  iconforge apply
-  iconforge apply --all
-  iconforge apply <managed-key>
-  iconforge apply <app> --icon <file.icns> [--strategy <auto|internal-icns|fileicon>] [--nuke] [--force-asset] [--dry-run]
+  iconforge apply <app> -i <file.icns> [options]
+  iconforge apply <managed-key> [managed-options]
+  iconforge apply -a [managed-options]
+  iconforge apply                         same as -a for the configured icon root
 
-\`apply\` performs app-bundle mutation. Asset-catalog-backed apps are
-refused by default. Use --force-asset to override.
+Arguments:
+  <app>                  App name or path when -i/--icon is supplied
+  <managed-key>          One top-level directory name in the managed icon root
 
-Reconciliation flags:
-      --all             Reconcile the complete managed icon library
-      --icon-root PATH  Override the managed icon library root
-      --verbose         Print per-entry reconciliation details
+Options:
+  -i, --icon <file>      Apply this .icns file directly to <app>
+  -s, --strategy <name> Select auto, native, or internal-icns
+                         Compatibility alias accepted: fileicon = native
+  -a, --all             Reconcile every top-level directory in the icon root
+  -r, --icon-root <dir> Set the managed icon library root
+  -c, --refresh-caches  Refresh icon caches after a direct apply
+      --nuke             Compatibility alias for --refresh-caches
+  -f, --force-asset     Allow explicit internal-icns on an asset-catalog app
+  -S, --no-resign       Skip ad hoc signing after internal bundle mutation
+  -n, --dry-run         Preview without modifying apps or caches
+  -v, --verbose         Print a status line for each managed library entry
+  -h, --help            Show this help
+
+Strategies:
+  auto           Preserve an existing Finder custom-icon route; use native for
+                 asset catalogs, vendor signatures, or protected bundles;
+                 otherwise use internal-icns
+  native         Set a Finder custom icon through the bundled AppKit helper
+  internal-icns  Back up and replace the app bundle's loose .icns, then re-sign
+
+Protected bundles:
+  Icon Forge never invokes sudo. Direct native apply prints one scoped helper
+  command; managed apply reports needs-authorization and leaves the app alone.
+
+Managed library layout:
+  <icon-root>/<managed-key>/<one-icon>.icns
+  The preferred filename is <managed-key>.icns. A sole .icns also works.
+  Bulk reconciliation refreshes caches once if at least one entry is applied.
+
+Examples:
+  iconforge apply "/Applications/Google Messages.app" -i ./icons/google-messages.icns -c
+  iconforge apply visual-studio-code -r /path/to/icon-library -v
+  iconforge apply -a -r /path/to/icon-library -n -v
 EOF
 }
 
 restore_help() {
   cat <<EOF
+Restore an internal icon backup or remove a Finder custom icon.
+
 Usage:
-  iconforge restore <app> [--nuke] [--dry-run]
+  iconforge restore <app> [options]
+
+Arguments:
+  <app>                  App name or path to an .app bundle
+
+Options:
+  -c, --refresh-caches  Refresh icon caches after restoring
+      --nuke             Compatibility alias for --refresh-caches
+  -S, --no-resign       Skip ad hoc signing after restoring an internal backup
+  -n, --dry-run         Preview without modifying the app or caches
+  -h, --help            Show this help
 
 Restore the original icon from the *_ugly.icns backup created by apply.
-For apps changed with the fileicon strategy, remove the file-level custom icon.
+When no internal backup exists, remove the Finder-level custom icon.
+
+Examples:
+  iconforge restore "/Applications/Google Messages.app" -c
+  iconforge restore "Visual Studio Code" --dry-run
 EOF
 }
 
 nuke_help() {
   cat <<EOF
-Usage:
-  iconforge nuke [app] [--dry-run]
+Refresh user-level macOS icon caches.
 
-Clear user-level icon caches and restart Finder, Dock, and iconservicesagent.
-If an app is provided, its bundle and Info.plist are touched first.
+Usage:
+  iconforge refresh [app] [options]
+  iconforge nuke [app] [options]
+
+Arguments:
+  [app]          Optional app name or path. The bundle and Info.plist are
+                 touched before caches are refreshed.
+
+Options:
+  -n, --dry-run  Print planned cache work without changing anything
+  -h, --help     Show this help
+
+Behavior:
+  Removes user-accessible iconservices/Dock cache files, restarts Finder, Dock,
+  and iconservicesagent, and refreshes Quick Look when qlmanage is available.
+
+Examples:
+  iconforge refresh
+  iconforge refresh "/Applications/Google Messages.app"
+  iconforge nuke --dry-run
 EOF
 }
 
@@ -142,9 +222,15 @@ apply_to_inspected_app() {
   apply_icon_with_strategy "$strategy_name" "$icon_file" "$force_asset" || return 1
 
   if strategy_requires_bundle_refresh "$strategy_name"; then
-    touch_app_bundle "$APP_PATH" || return 1
+    if ! touch_app_bundle "$APP_PATH"; then
+      strategy_internal_icns_rollback "$no_resign" || true
+      return 1
+    fi
     if [[ "$no_resign" != true ]]; then
-      resign_app_bundle "$APP_PATH" || return 1
+      if ! resign_app_bundle "$APP_PATH"; then
+        strategy_internal_icns_rollback "$no_resign" || true
+        return 1
+      fi
     fi
   fi
 
@@ -158,8 +244,12 @@ print_explicit_apply_result() {
 
   if [[ "$ICONFORGE_DRY_RUN" == true ]]; then
     printf 'Strategy: %s\n' "$selected_strategy"
-    printf 'Planned icon target: %s\n' "$APP_ICON_TARGET"
-    printf 'Planned backup path: %s\n' "$APP_ICON_BACKUP"
+    if [[ "$selected_strategy" == "native" ]]; then
+      printf 'Planned Finder custom icon target: %s\n' "$APP_PATH"
+    else
+      printf 'Planned icon target: %s\n' "$APP_ICON_TARGET"
+      printf 'Planned backup path: %s\n' "$APP_ICON_BACKUP"
+    fi
     if strategy_requires_bundle_refresh "$selected_strategy" && [[ "$no_resign" != true ]]; then
       printf 'Planned re-sign: %s\n' "$APP_PATH"
     fi
@@ -168,8 +258,12 @@ print_explicit_apply_result() {
     fi
   else
     printf 'Strategy: %s\n' "$selected_strategy"
-    printf 'Applied icon: %s\n' "$APP_ICON_TARGET"
-    printf 'Backup icon: %s\n' "$APP_ICON_BACKUP"
+    if [[ "$selected_strategy" == "native" ]]; then
+      printf 'Applied Finder custom icon: %s\n' "$APP_PATH"
+    else
+      printf 'Applied icon: %s\n' "$APP_ICON_TARGET"
+      printf 'Backup icon: %s\n' "$APP_ICON_BACKUP"
+    fi
     if strategy_requires_bundle_refresh "$selected_strategy" && [[ "$no_resign" != true ]]; then
       printf 'Re-signed: %s\n' "$APP_PATH"
     fi
@@ -183,12 +277,10 @@ print_explicit_apply_result() {
 
 RECONCILE_LAST_STATUS=""
 RECONCILE_LAST_MESSAGE=""
-RECONCILE_LAST_CHANGED=false
 
 reconcile_reset_last_result() {
   RECONCILE_LAST_STATUS=""
   RECONCILE_LAST_MESSAGE=""
-  RECONCILE_LAST_CHANGED=false
 }
 
 reconcile_note_entry() {
@@ -313,6 +405,13 @@ reconcile_managed_entry() {
     return 0
   fi
 
+  if [[ "$selected_strategy" == "native" ]] && strategy_native_icon_requires_authorization; then
+    RECONCILE_LAST_STATUS="needs-authorization"
+    RECONCILE_LAST_MESSAGE="native icon write requires administrator authorization"
+    reconcile_note_entry "$verbose" "$key" "$RECONCILE_LAST_STATUS" "$RECONCILE_LAST_MESSAGE"
+    return 0
+  fi
+
   if inspected_app_icon_matches "$ICON_LIBRARY_RESOLVED_ICNS" "$selected_strategy" >"$log_file" 2>&1; then
     RECONCILE_LAST_STATUS="already-correct"
     RECONCILE_LAST_MESSAGE="$selected_strategy"
@@ -329,9 +428,12 @@ reconcile_managed_entry() {
     return 0
   fi
 
-  RECONCILE_LAST_STATUS="applied"
+  if [[ "$ICONFORGE_DRY_RUN" == true ]]; then
+    RECONCILE_LAST_STATUS="would-apply"
+  else
+    RECONCILE_LAST_STATUS="applied"
+  fi
   RECONCILE_LAST_MESSAGE="$selected_strategy"
-  RECONCILE_LAST_CHANGED=true
   reconcile_note_entry "$verbose" "$key" "$RECONCILE_LAST_STATUS" "$RECONCILE_LAST_MESSAGE"
   return 0
 }
@@ -342,14 +444,20 @@ print_reconciliation_summary() {
   local missing_apps="$3"
   local ambiguous_matches="$4"
   local needs_forge="$5"
-  local failed="$6"
+  local needs_authorization="$6"
+  local failed="$7"
 
-  printf 'IconForge reconciliation\n\n'
-  printf 'Applied: %s\n' "$applied"
+  printf 'Icon Forge reconciliation\n\n'
+  if [[ "$ICONFORGE_DRY_RUN" == true ]]; then
+    printf 'Would apply: %s\n' "$applied"
+  else
+    printf 'Applied: %s\n' "$applied"
+  fi
   printf 'Already correct: %s\n' "$already_correct"
   printf 'Missing applications: %s\n' "$missing_apps"
   printf 'Ambiguous matches: %s\n' "$ambiguous_matches"
   printf 'Needs forge: %s\n' "$needs_forge"
+  printf 'Needs authorization: %s\n' "$needs_authorization"
   printf 'Failed: %s\n' "$failed"
 }
 
@@ -367,13 +475,16 @@ cmd_apply_reconcile() {
   local missing_apps=0
   local ambiguous_matches=0
   local needs_forge=0
+  local needs_authorization=0
   local failed=0
   local changed_any=false
   local selected_keys=()
 
   config_load || return 1
-  icon_root="$(resolve_icon_root "$cli_icon_root")"
-  scan_icon_library "$icon_root" || return 1
+  icon_root="$(resolve_icon_root "$cli_icon_root")" || {
+    fail "Managed apply requires --icon-root <dir>, ICONFORGE_ICON_ROOT, or icon_root in $ICONFORGE_CONFIG_PATH_DEFAULT" || return 1
+  }
+  scan_icon_library "$icon_root" || fail "Icon library root not found: $icon_root" || return 1
   discover_applications
 
   if [[ -n "$managed_key" ]]; then
@@ -395,6 +506,9 @@ cmd_apply_reconcile() {
         applied=$((applied + 1))
         changed_any=true
         ;;
+      would-apply)
+        applied=$((applied + 1))
+        ;;
       already-correct)
         already_correct=$((already_correct + 1))
         ;;
@@ -406,6 +520,9 @@ cmd_apply_reconcile() {
         ;;
       needs-forge)
         needs_forge=$((needs_forge + 1))
+        ;;
+      needs-authorization)
+        needs_authorization=$((needs_authorization + 1))
         ;;
       failed)
         failed=$((failed + 1))
@@ -422,9 +539,9 @@ cmd_apply_reconcile() {
     cmd_nuke >/dev/null
   fi
 
-  print_reconciliation_summary "$applied" "$already_correct" "$missing_apps" "$ambiguous_matches" "$needs_forge" "$failed"
+  print_reconciliation_summary "$applied" "$already_correct" "$missing_apps" "$ambiguous_matches" "$needs_forge" "$needs_authorization" "$failed"
 
-  [[ "$failed" -eq 0 ]]
+  [[ "$failed" -eq 0 && "$needs_authorization" -eq 0 ]]
 }
 
 cmd_apply() {
@@ -439,44 +556,46 @@ cmd_apply() {
   local force_asset=false
   local no_resign=false
   local verbose=false
-  local nuke_args=()
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --icon)
+      -i|--icon)
+        [[ $# -ge 2 ]] || { fail "$1 requires a .icns file"; return 1; }
         icon_flag_provided=true
         icon_file="$2"
         shift 2
         ;;
-      --strategy)
+      -s|--strategy)
+        [[ $# -ge 2 ]] || { fail "$1 requires auto, native, or internal-icns"; return 1; }
         strategy_arg="$2"
         shift 2
         ;;
-      --icon-root)
+      -r|--icon-root)
+        [[ $# -ge 2 ]] || { fail "$1 requires an icon library directory"; return 1; }
         icon_root_arg="$2"
         shift 2
         ;;
-      --all)
+      -a|--all)
         apply_all=true
         shift
         ;;
-      --nuke)
+      -c|--refresh-caches|--nuke)
         do_nuke=true
         shift
         ;;
-      --force-asset)
+      -f|--force-asset)
         force_asset=true
         shift
         ;;
-      --dry-run)
+      -n|--dry-run)
         ICONFORGE_DRY_RUN=true
         shift
         ;;
-      --verbose)
+      -v|--verbose)
         verbose=true
         shift
         ;;
-      --no-resign)
+      -S|--no-resign)
         no_resign=true
         shift
         ;;
@@ -508,8 +627,11 @@ cmd_apply() {
 
     apply_to_inspected_app "$icon_file" "$selected_strategy" "$force_asset" "$no_resign" || return 1
     if [[ "$do_nuke" == true ]]; then
-      [[ "$ICONFORGE_DRY_RUN" == true ]] && nuke_args+=("--dry-run")
-      cmd_nuke "$APP_PATH" "${nuke_args[@]}"
+      if [[ "$ICONFORGE_DRY_RUN" == true ]]; then
+        cmd_nuke "$APP_PATH" --dry-run
+      else
+        cmd_nuke "$APP_PATH"
+      fi
     fi
 
     print_explicit_apply_result "$selected_strategy" "$do_nuke" "$no_resign"
@@ -524,22 +646,21 @@ cmd_restore() {
   local do_nuke=false
   local no_resign=false
   local backup_file=""
-  local nuke_args=()
-  local restored_with_fileicon=false
+  local removed_native_icon=false
 
   [[ $# -gt 0 ]] || { restore_help; return 1; }
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --nuke)
+      -c|--refresh-caches|--nuke)
         do_nuke=true
         shift
         ;;
-      --dry-run)
+      -n|--dry-run)
         ICONFORGE_DRY_RUN=true
         shift
         ;;
-      --no-resign)
+      -S|--no-resign)
         no_resign=true
         shift
         ;;
@@ -579,27 +700,30 @@ cmd_restore() {
     if [[ "$no_resign" != true ]]; then
       resign_app_bundle "$APP_PATH" || return 1
     fi
-  elif strategy_fileicon_available; then
-    strategy_fileicon_restore || return 1
-    restored_with_fileicon=true
+  elif strategy_native_icon_available; then
+    strategy_native_icon_restore || return 1
+    removed_native_icon=true
   else
-    fail "No *_ugly.icns backup found and fileicon is unavailable for $APP_PATH" || return 1
+    fail "No *_ugly.icns backup found and the bundled native icon helper is unavailable for $APP_PATH" || return 1
   fi
   if [[ "$do_nuke" == true ]]; then
-    [[ "$ICONFORGE_DRY_RUN" == true ]] && nuke_args+=("--dry-run")
-    cmd_nuke "$APP_PATH" "${nuke_args[@]}"
+    if [[ "$ICONFORGE_DRY_RUN" == true ]]; then
+      cmd_nuke "$APP_PATH" --dry-run
+    else
+      cmd_nuke "$APP_PATH"
+    fi
   fi
 
   if [[ "$ICONFORGE_DRY_RUN" == true ]]; then
-    if [[ "$restored_with_fileicon" == true ]]; then
-      printf 'Planned removal of fileicon custom icon: %s\n' "$APP_PATH"
+    if [[ "$removed_native_icon" == true ]]; then
+      printf 'Planned removal of Finder custom icon: %s\n' "$APP_PATH"
     else
       printf 'Planned restore target: %s\n' "$APP_ICON_TARGET"
       [[ "$no_resign" == true ]] || printf 'Planned re-sign: %s\n' "$APP_PATH"
     fi
   else
-    if [[ "$restored_with_fileicon" == true ]]; then
-      printf 'Removed fileicon custom icon: %s\n' "$APP_PATH"
+    if [[ "$removed_native_icon" == true ]]; then
+      printf 'Removed Finder custom icon: %s\n' "$APP_PATH"
     else
       printf 'Restored icon: %s\n' "$APP_ICON_TARGET"
       if [[ "$no_resign" != true ]]; then
@@ -638,7 +762,7 @@ cmd_nuke() {
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --dry-run)
+      -n|--dry-run)
         ICONFORGE_DRY_RUN=true
         shift
         ;;

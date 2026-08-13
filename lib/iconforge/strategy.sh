@@ -4,7 +4,7 @@ strategy_validate_name() {
   local strategy_name="$1"
 
   case "$strategy_name" in
-    auto|fileicon|internal-icns)
+    auto|native|fileicon|internal-icns)
       return 0
       ;;
     *)
@@ -38,24 +38,43 @@ select_apply_strategy() {
       printf 'internal-icns\n'
       return 0
       ;;
-    fileicon)
-      require_tool "$FILEICON_BIN" "Missing required tool: fileicon" || return 1
-      printf 'fileicon\n'
+    native|fileicon)
+      require_native_icon_helper || return 1
+      printf 'native\n'
       return 0
       ;;
   esac
 
+  if strategy_native_icon_is_set; then
+    printf 'native\n'
+    return 0
+  fi
+
   if [[ "$APP_USES_ASSET_CATALOG" == true ]]; then
-    if strategy_fileicon_available; then
-      printf 'fileicon\n'
+    if strategy_native_icon_available; then
+      printf 'native\n'
       return 0
     fi
 
-    fail "This app appears asset-catalog backed and fileicon is unavailable" || return 1
+    fail "This app appears asset-catalog backed and the bundled native icon helper is unavailable" || return 1
   fi
 
-  if [[ -n "$APP_ICON_TARGET" && -f "$APP_ICON_TARGET" ]]; then
+  if app_bundle_is_vendor_signed "$APP_PATH"; then
+    if strategy_native_icon_available; then
+      printf 'native\n'
+      return 0
+    fi
+
+    fail "This app is vendor signed and the bundled native icon helper is unavailable" || return 1
+  fi
+
+  if [[ -n "$APP_ICON_TARGET" && -f "$APP_ICON_TARGET" ]] && strategy_internal_icns_is_writable; then
     printf 'internal-icns\n'
+    return 0
+  fi
+
+  if strategy_native_icon_available; then
+    printf 'native\n'
     return 0
   fi
 
@@ -73,8 +92,8 @@ apply_icon_with_strategy() {
     internal-icns)
       strategy_internal_icns_apply "$icon_file" "$force_asset"
       ;;
-    fileicon)
-      strategy_fileicon_apply "$icon_file"
+    native|fileicon)
+      strategy_native_icon_apply "$icon_file"
       ;;
     *)
       fail "Strategy execution is not implemented for: $strategy_name" || return 1
