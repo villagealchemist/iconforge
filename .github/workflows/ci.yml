@@ -1,0 +1,41 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: macos-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: iconforge-processor/go.mod
+          cache-dependency-path: iconforge-processor/go.sum
+
+      - name: Install shell lint
+        run: brew install shellcheck
+
+      - name: Lint
+        run: make lint
+
+      - name: Test
+        run: make test
+
+      - name: Build release architectures
+        run: make build-all
+
+      - name: Validate generated Homebrew formula
+        run: |
+          ./scripts/render-homebrew-formula.sh "$(tr -d '[:space:]' < VERSION)" "$(printf '0%.0s' {1..64})" > "$RUNNER_TEMP/iconforge.rb"
+          ruby -c "$RUNNER_TEMP/iconforge.rb"
+
+      - name: Confirm checks left the tree unchanged
+        run: git diff --exit-code
