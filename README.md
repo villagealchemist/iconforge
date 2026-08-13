@@ -1,6 +1,6 @@
 <!--suppress CheckImageSize -->
 <p align="center">
-  <img src="assets/iconforge_logo.png" alt="Icon Forge logo" width="300"/>
+  <img src="assets/iconforge-logo.png" alt="Icon Forge logo" width="300"/>
 </p>
 <p align="center">
   <strong>Turn source artwork into a macOS icon, then put it where it belongs.</strong>
@@ -253,9 +253,9 @@ refreshes Quick Look when available. It cannot reconstruct icon data lost in an 
 
 - `--dry-run` previews supported forge, apply, restore, and refresh work. Use it before bulk reconciliation or a forced
   strategy.
-- `internal-icns` changes the signed contents of an app. Its default re-sign is `codesign --force --deep --sign -`.
-  Icon Forge verifies the resulting signature across all architectures before reporting success and restores the
-  preserved icon if signing or verification fails.
+- `internal-icns` changes the signed contents of an app. Its default re-sign is `codesign --force --deep --sign -`. Icon
+  Forge verifies the resulting signature across all architectures before reporting success and restores the preserved
+  icon if signing or verification fails.
 - `native` overwrites any existing Finder custom icon without preserving it. A later `restore` removes that custom icon;
   it cannot recover an older Finder custom icon.
 - If no internal backup can be selected, `restore` removes the current Finder custom icon even when Icon Forge did not
@@ -280,16 +280,16 @@ make build
 
 The principal development targets are:
 
-| Target              | Purpose                                                   |
-|---------------------|-----------------------------------------------------------|
-| `make build`        | Build the Go processor and native AppKit helper           |
-| `make build-all`    | Build release binaries for Intel and Apple silicon macOS  |
-| `make test`         | Build, run Go tests, and run the shell integration suite  |
-| `make test-verbose` | Run shell tests inline after building                     |
-| `make test-go`      | Run the Go tests only                                     |
+| Target              | Purpose                                                               |
+|---------------------|-----------------------------------------------------------------------|
+| `make build`        | Build the Go processor and native AppKit helper                       |
+| `make build-all`    | Build release binaries for Intel and Apple silicon macOS              |
+| `make test`         | Build, run Go tests, and run the shell integration suite              |
+| `make test-verbose` | Run shell tests inline after building                                 |
+| `make test-go`      | Run the Go tests only                                                 |
 | `make lint`         | Run ShellCheck when installed, then `go vet` and verify Go formatting |
-| `make clean`        | Remove generated binaries and test artifacts              |
-| `make version`      | Print the version embedded in the public command          |
+| `make clean`        | Remove generated binaries and test artifacts                          |
+| `make version`      | Print the version embedded in the public command                      |
 
 `make lint` checks Go formatting without rewriting source. A release lint is incomplete when ShellCheck is unavailable.
 
