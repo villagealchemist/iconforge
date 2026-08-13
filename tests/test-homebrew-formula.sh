@@ -27,8 +27,18 @@ grep -Fq 'system bin/"iconforge", "forge"' "$FORMULA" || {
   exit 1
 }
 
-grep -Fq 'assert_path_exists testpath/"output/test.icns"' "$FORMULA" || {
+grep -Fq 'assert_path_exists icns' "$FORMULA" || {
   echo "❌ Formula test does not assert the forged ICNS output"
+  exit 1
+}
+
+grep -Fq 'system "iconutil", "-c", "iconset"' "$FORMULA" || {
+  echo "❌ Formula test does not unpack the forged ICNS"
+  exit 1
+}
+
+grep -Fq 'icon_512x512.png icon_512x512@2x.png' "$FORMULA" || {
+  echo "❌ Formula test does not require the complete iconset representation list"
   exit 1
 }
 

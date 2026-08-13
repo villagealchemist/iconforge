@@ -44,7 +44,7 @@ Commands:
   forge      Convert an image, image list, or directory into macOS .icns files
   inspect    Explain how an application bundle provides its icon
   apply      Apply one icon, one managed library entry, or the whole library
-  restore    Restore an internal backup or remove a Finder custom icon
+  restore    Restore an internal backup and/or remove a Finder custom icon
   refresh    Refresh macOS icon caches (preferred name; alias: nuke)
   nuke       Alias for refresh
   help       Show this overview or help for one command

@@ -64,8 +64,8 @@ assert_equals() {
   [[ "$1" == "$2" ]] || { echo "❌ Expected '$1' == '$2'"; exit 1; }
 }
 
-assert_equals "$("$ICONFORGE_BIN" -V)" "iconforge v2.0.0"
-assert_equals "$("$ICONFORGE_BIN" forge --version)" "iconforge v2.0.0"
+assert_equals "$("$ICONFORGE_BIN" -V)" "iconforge v2.0.1"
+assert_equals "$("$ICONFORGE_BIN" forge --version)" "iconforge v2.0.1"
 
 set +e
 "$ICONFORGE_BIN" help unknown >"$OUTPUT" 2>&1

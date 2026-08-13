@@ -11,14 +11,15 @@
 <p align="center">⋆｡°✩ ⟡ ♡ ⟡ ✩°｡⋆</p>
 
 Icon Forge is a macOS command-line workflow for custom application icons. The `iconforge` command creates `.icns` files,
-inspects application bundles, chooses between internal icon replacement and a native Finder custom icon, restores
+inspects application bundles, applies a native Finder custom icon by default, restores
 previous state, and refreshes the caches that make macOS notice.
 
 Icon Forge carries its own Go image processor and native AppKit helper; the remaining runtime dependencies are macOS
 system tools. It does not require `fileicon`, `ffmpeg`, AppleScript, or `iconutil`.
 
 For every flag, resolution rule, configuration key, status, and recovery path, use
-the [complete command reference](docs/USAGE.md). User-visible release history lives in the [changelog](CHANGELOG.md).
+the [complete command reference](docs/USAGE.md). User-visible release history lives in the [changelog](CHANGELOG.md),
+with upgrade guidance in the [2.0.1 release notes](docs/releases/v2.0.1.md).
 
 ## ✦ In essence
 
@@ -26,8 +27,8 @@ the [complete command reference](docs/USAGE.md). User-visible release history li
 - Process one image, a batch of images, or a recursive directory tree.
 - Inspect how an app declares its icon before changing anything.
 - Apply one icon directly or reconcile a directory-based icon library.
-- Use Finder custom icons for asset catalogs, vendor-signed apps, existing Finder-level customizations, and protected
-  bundles; use backed-up internal `.icns` replacement only when a traditional bundle is writable and not vendor signed.
+- Use native Finder custom icons by default without changing application contents or signatures; retain backed-up
+  internal `.icns` replacement as an explicit expert strategy and a fallback when the bundled helper is unavailable.
 - Preview forge, apply, restore, and refresh work with `--dry-run`.
 
 Icon Forge is macOS-only. The `forge` command does not target application bundles; `apply` and `restore` do.
@@ -127,7 +128,7 @@ Application updates, signing policy, permissions, and macOS protection can all a
 | `iconforge forge`   | Convert supported source images into `.icns` files                |
 | `iconforge inspect` | Report the icon metadata and loose assets in an app bundle        |
 | `iconforge apply`   | Apply one `.icns` or reconcile a managed icon library             |
-| `iconforge restore` | Restore an internal backup or remove a Finder custom icon         |
+| `iconforge restore` | Restore an internal backup and/or remove a Finder custom icon     |
 | `iconforge refresh` | Refresh user-level icon caches, optionally touching one app first |
 | `iconforge nuke`    | Compatibility alias for `refresh`                                 |
 
@@ -170,7 +171,7 @@ iconforge forge ./artwork --recursive --output ./dist --no-warnings
 ```
 
 Icon Forge accepts `.png`, `.jpg`, `.jpeg`, `.webp`, `.tiff`, `.tif`, and `.gif`. GIF input uses the first decoded
-frame. Every source is scaled to square icon representations from 16 through 1024 pixels; prepare square artwork if
+frame. Every source is scaled to the ten standard and Retina icon representations from 16 through 1024 pixels; prepare square artwork if
 preserving its proportions matters.
 
 Sources with either dimension below 512 pixels produce a quality warning and, unless `--no-warnings` is present, a
@@ -181,15 +182,13 @@ collision behavior, and failure handling.
 
 `iconforge apply` defaults to `auto`:
 
-- An existing usable Finder custom icon keeps the app on the `native` route.
-- A recognized asset catalog selects `native`, which uses AppKit without replacing app contents or re-signing the
-  bundle.
-- A vendor-signed app selects `native`, even when it exposes a loose `.icns`. This avoids invalidating hardened or
-  updater-managed bundles such as Discord.
-- A writable, unsigned or already-ad-hoc bundle with a resolvable loose `.icns` selects `internal-icns`, preserving the
-  first `*_ugly.icns` backup before replacement and ad hoc re-signing.
-- A protected or otherwise nonwritable bundle falls back to `native`. Icon Forge reports that administrator
-  authorization is needed before attempting a write; it never invokes `sudo` itself.
+- When the bundled helper is available, every application selects `native`. AppKit sets a Finder-level custom icon
+  without replacing bundle contents or changing the app's signature.
+- A protected or otherwise nonwritable bundle still selects `native`; Icon Forge reports that administrator
+  authorization is needed before attempting a write and never invokes `sudo` itself.
+- When the helper is unavailable, only a writable, unsigned loose-icon bundle may fall back to `internal-icns`.
+- `--strategy internal-icns` remains an explicit expert override. It preserves the first `*_ugly.icns` backup before
+  replacement and ad hoc re-signing.
 
 `fileicon` remains accepted as a compatibility strategy name, but it resolves to `native` and never invokes a `fileicon`
 executable. The exact classification heuristic, overrides, signing controls, and asset-catalog safeguards are
@@ -241,8 +240,8 @@ iconforge refresh
 ```
 
 For internal replacement, `restore` copies the preserved backup over the loose `.icns`, touches the bundle, and re-signs
-it. Without a selectable internal backup, it asks the native helper to remove the app directory's current Finder custom
-icon.
+it. It also removes a current Finder custom icon when one is present, so legacy mixed states are restored at both
+layers. Without a selectable internal backup, it asks the native helper to remove the Finder custom icon only.
 
 `refresh` removes user-accessible iconservices and Dock cache files, restarts Finder, Dock, and `iconservicesagent`, and
 refreshes Quick Look when available. It cannot reconstruct icon data lost in an application update.
@@ -261,6 +260,8 @@ refreshes Quick Look when available. It cannot reconstruct icon data lost in an 
 - If no internal backup can be selected, `restore` removes the current Finder custom icon even when Icon Forge did not
   create it.
 - App updates may overwrite internal replacements, backups, or Finder custom-icon metadata.
+- If v2.0.0 internally modified a vendor application, reinstall that application from its trusted source before
+  applying with v2.0.1. Copying the icon backup back cannot recover the original vendor signature.
 - Cache refresh restarts user interface services. It does not use privileged system-wide cache deletion.
 - System Integrity Protection, ownership, MDM policy, filesystem permissions, or signature enforcement may block
   changes. For a root-owned bundle, use only the scoped native-helper command printed by Icon Forge; never run a

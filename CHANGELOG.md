@@ -2,6 +2,26 @@
 
 All notable user-facing changes to Icon Forge are recorded here.
 
+## 2.0.1
+
+### Fixed
+
+- Automatic application icon changes now prefer the bundled native Finder custom-icon route for every app, avoiding
+  internal bundle mutation, ad hoc re-signing, and macOS-added presentation plates seen with apps such as VS Code.
+- Mixed-state restore now restores a selectable internal backup and removes a current Finder custom icon in one run.
+- Forged ICNS files now contain all ten standard and Retina representations and round-trip through `iconutil` as a
+  complete iconset.
+
+### Compatibility and recovery
+
+- Explicit `internal-icns` remains available as an expert option. With no native helper, automatic selection may use it
+  only for a writable unsigned loose-icon bundle; asset-catalog and vendor-signed apps fail safely.
+- `fileicon` remains a native compatibility alias and never requires a third-party executable.
+- Native apply warns when a legacy internal backup remains. If v2.0.0 internally modified a vendor app, reinstall that
+  app from its trusted source to recover the original signature before applying again.
+- App updates can still remove Finder custom-icon data. Icon Forge can reapply or remove it but cannot make an updater
+  preserve it.
+
 ## 2.0.0
 
 Icon Forge 2 is a macOS icon workflow rather than only an image converter.

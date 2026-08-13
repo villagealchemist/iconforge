@@ -53,11 +53,11 @@ Options:
   -h, --help            Show this help
 
 Strategies:
-  auto           Preserve an existing Finder custom-icon route; use native for
-                 asset catalogs, vendor signatures, or protected bundles;
-                 otherwise use internal-icns
+  auto           Prefer the bundled native Finder custom-icon route for every
+                 app; fall back to internal-icns only when the helper is absent
+                 and a writable unsigned loose icon is available
   native         Set a Finder custom icon through the bundled AppKit helper
-  internal-icns  Back up and replace the app bundle's loose .icns, then re-sign
+  internal-icns  Expert option: back up and replace a loose .icns, then re-sign
 
 Protected bundles:
   Icon Forge never invokes sudo. Direct native apply prints one scoped helper
@@ -77,7 +77,7 @@ EOF
 
 restore_help() {
   cat <<EOF
-Restore an internal icon backup or remove a Finder custom icon.
+Restore an internal icon backup and/or remove a Finder custom icon.
 
 Usage:
   iconforge restore <app> [options]

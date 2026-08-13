@@ -32,7 +32,7 @@ The public entry point is `iconforge`. A repository checkout uses the same dispa
 | `forge`   | Build one or more `.icns` files from supported images          |
 | `inspect` | Report how an application bundle declares and stores its icon  |
 | `apply`   | Apply one `.icns` directly or reconcile a managed icon library |
-| `restore` | Restore an internal backup or remove a Finder custom icon      |
+| `restore` | Restore an internal backup and/or remove a Finder custom icon  |
 | `refresh` | Refresh user-level macOS icon caches                           |
 | `nuke`    | Compatibility alias for `refresh`                              |
 | `help`    | Show root help or help for one known command                   |
@@ -166,7 +166,8 @@ For each accepted input, Icon Forge:
 2. Reads the decoded dimensions.
 3. Warns when either dimension is below 512 pixels and prompts unless `-q/--no-warnings` is active.
 4. Uses Catmull-Rom scaling to create square representations.
-5. Assembles PNG chunks for 16, 32, 64, 128, 256, 512, and 1024 pixels into one `.icns`.
+5. Assembles the ten standard and Retina ICNS representations from seven unique pixel sizes: 16, 32, 64, 128, 256,
+   512, and 1024. Shared 32-, 256-, and 512-pixel PNGs supply both semantic representations at those dimensions.
 6. Removes the temporary `.iconset` after successful assembly and removes the converted temporary PNG whenever that
    file's operation finishes.
 
@@ -388,15 +389,13 @@ copy, touch, and signing path. Only managed reconciliation can return `already-c
 
 `auto` is the default. Selection is exact:
 
-1. An app with a usable existing Finder custom icon selects `native`, preserving the same application route.
-2. Otherwise, a classified asset-catalog app selects `native`. If the helper is unavailable, selection fails rather
-   than falling back to a loose icon that may not control the visible application icon.
-3. Otherwise, an app whose code signature reports a real `TeamIdentifier` selects `native`. Icon Forge does not
-   internally mutate a vendor-signed bundle during automatic selection.
-4. Otherwise, an existing resolved loose `.icns` selects `internal-icns` only when the app directory, resources,
-   target icon, Info.plist, and any existing backup are writable.
-5. Otherwise, the bundled native helper selects `native`.
-6. Selection fails only when no writable internal route exists and the native helper is unavailable.
+1. When the bundled native helper is available, every app selects `native`.
+2. Without the helper, an asset-catalog app fails rather than falling back to a loose icon that may not be visible.
+3. Without the helper, an app whose code signature reports a real `TeamIdentifier` fails rather than mutating a
+   vendor-signed bundle.
+4. Without the helper, an existing resolved loose `.icns` selects `internal-icns` only when the app directory,
+   resources, target icon, Info.plist, and any existing backup are writable.
+5. Selection fails when none of those routes is valid.
 
 An explicit `native` request works for any resolvable app when the helper is available. An explicit `internal-icns`
 request still requires a resolved existing loose `.icns`.
@@ -412,6 +411,10 @@ The `native` strategy:
 
 It does not replace app-bundle contents, touch the app, create an internal backup, or re-sign the bundle. It overwrites
 any existing Finder custom icon without preserving that previous custom icon.
+
+If native apply finds a selectable `*_ugly.icns` backup from an earlier internal apply, it warns that legacy bundle
+mutation remains. Reinstall a formerly vendor-signed app from its trusted source to recover its original signature,
+then apply the native icon again. Restoring icon bytes and ad hoc signing cannot reconstruct a vendor signature.
 
 Creating or removing the Finder custom icon still requires write access to the `.app` directory. For a protected or
 root-owned bundle, direct apply fails before invoking AppKit and prints a narrowly scoped `sudo <helper> set ...`
@@ -443,9 +446,9 @@ was created by Icon Forge or that it contains the current app's original icon.
 A classified asset-catalog app refuses an explicit internal apply unless `-f/--force-asset` is present. The flag removes
 that refusal only. It does not create a missing loose target or make an unused `.icns` visible to macOS.
 
-Automatic selection also keeps vendor-signed loose-icon apps on the native route. An explicit `internal-icns` request
-remains an expert override and replaces the vendor signature with an ad hoc signature; this can interfere with launch,
-updaters, entitlements, or policy enforcement even when strict verification succeeds.
+Automatic selection uses native for all apps while the helper is available. An explicit `internal-icns` request remains
+an expert override and replaces a vendor signature with an ad hoc signature; this can interfere with launch, updaters,
+entitlements, or policy enforcement even when strict verification succeeds.
 
 #### `fileicon`
 
@@ -700,12 +703,14 @@ iconforge restore <app> [options]
 
 ### Restore selection and precedence
 
-After resolving and inspecting the app, Icon Forge selects one operation:
+After resolving and inspecting the app, Icon Forge resolves the applicable layers:
 
 1. If the resolved loose target's expected `*_ugly.icns` exists, use it.
 2. Otherwise, scan top-level `Contents/Resources` for `*_ugly.icns`. If exactly one exists, use it.
-3. If zero or multiple backups are found, use the native helper to remove the app directory's Finder custom icon.
-4. If no backup is selectable and the helper is unavailable, fail.
+3. Independently test for a usable Finder custom icon when the native helper is available.
+4. Restore a selected backup, remove a detected Finder custom icon, or perform both operations for a mixed state.
+5. With no selectable backup, call native removal even when no usable custom icon was detected so AppKit can clear
+   partial or stale Finder metadata. If the helper is unavailable too, fail.
 
 An internal restore copies the backup over the resolved target. If inspection did not resolve a target, the target path
 is derived by removing `_ugly` from the selected backup filename. The app and `Info.plist` are touched and the bundle is
@@ -713,9 +718,9 @@ ad hoc re-signed unless `--no-resign` is present.
 
 The backup is not deleted after restoration.
 
-Only one branch runs. When a backup is selected, `restore` does not also remove a Finder custom icon. When no backup is
-selected, native removal does not know whether Icon Forge created the current Finder custom icon. It removes any custom
-icon at that level and cannot recover a previous one.
+Native removal does not know whether Icon Forge created the current Finder custom icon. It removes any custom icon at
+that level and cannot recover a previous one. A dry run reports the internal restore and Finder removal separately when
+both would occur.
 
 Multiple internal backups are not treated as an explicit ambiguity error. They fall through to native removal. Inspect
 and resolve such bundles manually before restoring.

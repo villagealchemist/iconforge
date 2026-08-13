@@ -47,6 +47,10 @@ The repositories can drift independently, so do not describe a 2.x Homebrew inst
 
 5. If manually testing icon mutation, use only a disposable copied bundle such as `~/Applications/Google Chrome IconForge Test.app`. Verify apply, helper test, restore, and final helper-test failure on the copy. Never use a live installed browser for release smoke tests.
 
+   For 2.0.1, also verify that automatic apply reports `native`, creates no `*_ugly.icns` backup, and leaves the copied
+   bundle's signature identity unchanged. Forge a test icon, unpack it with `iconutil -c iconset`, and require all ten
+   standard filenames before release.
+
 6. Audit `README.md`, `docs/USAGE.md`, installed help, and the Homebrew description for new commands, options, formats, dependencies, compatibility names, safety behavior, and internal links. Validate every command example against the release tree.
 
    Confirm that protected-bundle dry runs report `needs-authorization` without prompting, and that nested applications such as Adobe Photoshop are matched at their inner `.app` path.
