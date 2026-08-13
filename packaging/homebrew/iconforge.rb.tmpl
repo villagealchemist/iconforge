@@ -18,7 +18,7 @@ class Iconforge < Formula
 
     libexec.install "VERSION"
     libexec.install "iconforge.sh" => "iconforge"
-    libexec.install "iconforge-processor/iconforge-processor" => "iconforge-processor"
+    (libexec/"iconforge-processor").install "iconforge-processor/iconforge-processor"
     (libexec/"iconforge-native-icon").install "iconforge-native-icon/iconforge-native-icon"
     libexec.install "lib"
 
@@ -27,7 +27,16 @@ class Iconforge < Formula
 
   test do
     assert_match "iconforge v#{version}", shell_output("#{bin}/iconforge --version")
-    assert_match "iconforge-processor v#{version}", shell_output("#{libexec}/iconforge-processor version")
+    assert_match "iconforge-processor v#{version}", shell_output("#{libexec}/iconforge-processor/iconforge-processor version")
     assert_match "usage:", shell_output("#{libexec}/iconforge-native-icon/iconforge-native-icon 2>&1", 64)
+
+    png = [
+      "89504e470d0a1a0a0000000d4948445200000001000000010804000000b51c0c02",
+      "0000000b4944415478da6364f80f00010501012718e3660000000049454e44ae426082",
+    ].join
+    (testpath/"test.png").binwrite [png].pack("H*")
+    system bin/"iconforge", "forge", testpath/"test.png",
+           "--output", testpath/"output", "--no-warnings"
+    assert_path_exists testpath/"output/test.icns"
   end
 end
