@@ -646,6 +646,8 @@ cmd_restore() {
   local do_nuke=false
   local no_resign=false
   local backup_file=""
+  local had_native_icon=false
+  local restored_internal_icon=false
   local removed_native_icon=false
 
   [[ $# -gt 0 ]] || { restore_help; return 1; }
@@ -686,6 +688,9 @@ cmd_restore() {
 
   inspect_app_metadata "$app_arg" || return 1
   backup_file="$(find_restore_backup || true)"
+  if strategy_native_icon_available && strategy_native_icon_is_set; then
+    had_native_icon=true
+  fi
 
   if [[ -n "$backup_file" ]]; then
     if [[ -z "$APP_ICON_TARGET" ]]; then
@@ -700,10 +705,16 @@ cmd_restore() {
     if [[ "$no_resign" != true ]]; then
       resign_app_bundle "$APP_PATH" || return 1
     fi
-  elif strategy_native_icon_available; then
+    restored_internal_icon=true
+  fi
+
+  if [[ "$had_native_icon" == true ]]; then
     strategy_native_icon_restore || return 1
     removed_native_icon=true
-  else
+  elif [[ -z "$backup_file" ]] && strategy_native_icon_available; then
+    strategy_native_icon_restore || return 1
+    removed_native_icon=true
+  elif [[ -z "$backup_file" ]]; then
     fail "No *_ugly.icns backup found and the bundled native icon helper is unavailable for $APP_PATH" || return 1
   fi
   if [[ "$do_nuke" == true ]]; then
@@ -715,20 +726,22 @@ cmd_restore() {
   fi
 
   if [[ "$ICONFORGE_DRY_RUN" == true ]]; then
-    if [[ "$removed_native_icon" == true ]]; then
-      printf 'Planned removal of Finder custom icon: %s\n' "$APP_PATH"
-    else
+    if [[ "$restored_internal_icon" == true ]]; then
       printf 'Planned restore target: %s\n' "$APP_ICON_TARGET"
       [[ "$no_resign" == true ]] || printf 'Planned re-sign: %s\n' "$APP_PATH"
     fi
-  else
     if [[ "$removed_native_icon" == true ]]; then
-      printf 'Removed Finder custom icon: %s\n' "$APP_PATH"
-    else
+      printf 'Planned removal of Finder custom icon: %s\n' "$APP_PATH"
+    fi
+  else
+    if [[ "$restored_internal_icon" == true ]]; then
       printf 'Restored icon: %s\n' "$APP_ICON_TARGET"
       if [[ "$no_resign" != true ]]; then
         printf 'Re-signed: %s\n' "$APP_PATH"
       fi
+    fi
+    if [[ "$removed_native_icon" == true ]]; then
+      printf 'Removed Finder custom icon: %s\n' "$APP_PATH"
     fi
   fi
 

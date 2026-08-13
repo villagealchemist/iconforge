@@ -45,36 +45,21 @@ select_apply_strategy() {
       ;;
   esac
 
-  if strategy_native_icon_is_set; then
+  if strategy_native_icon_available; then
     printf 'native\n'
     return 0
   fi
 
   if [[ "$APP_USES_ASSET_CATALOG" == true ]]; then
-    if strategy_native_icon_available; then
-      printf 'native\n'
-      return 0
-    fi
-
     fail "This app appears asset-catalog backed and the bundled native icon helper is unavailable" || return 1
   fi
 
   if app_bundle_is_vendor_signed "$APP_PATH"; then
-    if strategy_native_icon_available; then
-      printf 'native\n'
-      return 0
-    fi
-
     fail "This app is vendor signed and the bundled native icon helper is unavailable" || return 1
   fi
 
   if [[ -n "$APP_ICON_TARGET" && -f "$APP_ICON_TARGET" ]] && strategy_internal_icns_is_writable; then
     printf 'internal-icns\n'
-    return 0
-  fi
-
-  if strategy_native_icon_available; then
-    printf 'native\n'
     return 0
   fi
 

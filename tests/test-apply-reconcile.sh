@@ -310,19 +310,21 @@ assert_file_contains "$OUTPUT" "pngonly: needs-forge"
 assert_file_contains "$OUTPUT" "multiicns: failed"
 assert_file_contains "$OUTPUT" "failsign: failed"
 assert_file_contains "$OUTPUT" "protected: needs-authorization"
-assert_file_exists "$HOME_DIR/Applications/Visual Studio Code.app/Contents/Resources/CodeIcon_ugly.icns"
-assert_file_exists "$HOME_DIR/Applications/Figma.app/Contents/Resources/FigmaIcon_ugly.icns"
+assert_not_exists "$HOME_DIR/Applications/Visual Studio Code.app/Contents/Resources/CodeIcon_ugly.icns"
+assert_not_exists "$HOME_DIR/Applications/Figma.app/Contents/Resources/FigmaIcon_ugly.icns"
 assert_not_exists "$HOME_DIR/Applications/Google Chrome.app/Contents/Resources/ChromeIcon_ugly.icns"
 assert_not_exists "$HOME_DIR/Applications/SkipMe.app/Contents/Resources/SkipMeIcon_ugly.icns"
-assert_equals "$(shasum -a 256 "$HOME_DIR/Applications/Visual Studio Code.app/Contents/Resources/CodeIcon_ugly.icns" | awk '{print $1}')" "$ORIGINAL_CODE_SUM"
-assert_equals "$(shasum -a 256 "$HOME_DIR/Applications/Figma.app/Contents/Resources/FigmaIcon_ugly.icns" | awk '{print $1}')" "$ORIGINAL_FIGMA_SUM"
-assert_equals "$(shasum -a 256 "$HOME_DIR/Applications/Visual Studio Code.app/Contents/Resources/CodeIcon.icns" | awk '{print $1}')" "$(shasum -a 256 "$ICON_ROOT/code/code.icns" | awk '{print $1}')"
-assert_equals "$(shasum -a 256 "$HOME_DIR/Applications/Figma.app/Contents/Resources/FigmaIcon.icns" | awk '{print $1}')" "$(shasum -a 256 "$ICON_ROOT/figma/figma.icns" | awk '{print $1}')"
+assert_equals "$(shasum -a 256 "$HOME_DIR/Applications/Visual Studio Code.app/Contents/Resources/CodeIcon.icns" | awk '{print $1}')" "$ORIGINAL_CODE_SUM"
+assert_equals "$(shasum -a 256 "$HOME_DIR/Applications/Figma.app/Contents/Resources/FigmaIcon.icns" | awk '{print $1}')" "$ORIGINAL_FIGMA_SUM"
 assert_not_exists "$HOME_DIR/Applications/FailSign.app/Contents/Resources/FailSignIcon_ugly.icns"
 assert_line_count "$FAKE_LOG_DIR/killall.log" 3
 assert_line_count "$FAKE_LOG_DIR/qlmanage.log" 1
 assert_file_contains "$FAKE_LOG_DIR/native-icon.log" "set $HOME_DIR/Applications/Arc Browser.app $ICON_ROOT/arc/arc.icns"
+assert_file_contains "$FAKE_LOG_DIR/native-icon.log" "set $HOME_DIR/Applications/Visual Studio Code.app $ICON_ROOT/code/code.icns"
+assert_file_contains "$FAKE_LOG_DIR/native-icon.log" "set $HOME_DIR/Applications/Figma.app $ICON_ROOT/figma/figma.icns"
 assert_file_not_contains "$FAKE_LOG_DIR/native-icon.log" "set $HOME_DIR/Applications/Protected.app"
+assert_not_exists "$FAKE_LOG_DIR/touch.log"
+assert_not_exists "$FAKE_LOG_DIR/codesign.log"
 assert_not_exists "$FAKE_LOG_DIR/native-icon.log.disabled"
 
 rm -f "$FAKE_LOG_DIR/"*.log
@@ -331,8 +333,8 @@ run_apply "$OUTPUT" -a
 STATUS=$?
 set -e
 [[ "$STATUS" -ne 0 ]] || { echo "❌ Reconciliation with remaining failures should return nonzero"; exit 1; }
-assert_file_contains "$OUTPUT" "Applied: 1"
-assert_file_contains "$OUTPUT" "Already correct: 2"
+assert_file_contains "$OUTPUT" "Applied: 3"
+assert_file_contains "$OUTPUT" "Already correct: 0"
 assert_file_contains "$OUTPUT" "Needs authorization: 1"
 assert_file_contains "$OUTPUT" "Failed: 2"
 assert_line_count "$FAKE_LOG_DIR/killall.log" 3
@@ -361,8 +363,7 @@ assert_file_contains "$DRY_OUTPUT" "code: would-apply"
 assert_not_exists "$DRY_HOME/Applications/Visual Studio Code.app/Contents/Resources/CodeIcon_ugly.icns"
 assert_equals "$(shasum -a 256 "$DRY_HOME/Applications/Visual Studio Code.app/Contents/Resources/CodeIcon.icns" | awk '{print $1}')" "$DRY_BEFORE_SUM"
 assert_not_exists "$FAKE_LOG_DIR/touch.log"
-assert_file_contains "$FAKE_LOG_DIR/codesign.log" "-dv --verbose=4 $DRY_HOME/Applications/Visual Studio Code.app"
-assert_file_not_contains "$FAKE_LOG_DIR/codesign.log" "--force --deep --sign - $DRY_HOME/Applications/Visual Studio Code.app"
+assert_not_exists "$FAKE_LOG_DIR/codesign.log"
 assert_file_not_contains "$FAKE_LOG_DIR/native-icon.log" "set $DRY_HOME/Applications/Visual Studio Code.app"
 assert_not_exists "$FAKE_LOG_DIR/killall.log"
 assert_not_exists "$FAKE_LOG_DIR/rm.log"
@@ -382,7 +383,7 @@ ICONFORGE_CODESIGN_BIN=codesign \
 ICONFORGE_NATIVE_ICON="$FAKE_BIN/iconforge-native-icon" \
 ICONFORGE_KILLALL_BIN=killall \
 ICONFORGE_RM_BIN=rm \
-bash "$ROOT_ICONFORGE" apply "$EXPLICIT_APP/Explicit.app" --icon "$EXPLICIT_ICON" >"$OUTPUT" 2>&1
+bash "$ROOT_ICONFORGE" apply "$EXPLICIT_APP/Explicit.app" --icon "$EXPLICIT_ICON" --strategy internal-icns >"$OUTPUT" 2>&1
 assert_file_contains "$OUTPUT" "Strategy: internal-icns"
 assert_file_exists "$EXPLICIT_APP/Explicit.app/Contents/Resources/ExplicitIcon_ugly.icns"
 

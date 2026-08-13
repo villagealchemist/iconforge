@@ -219,6 +219,12 @@ assert_equals "$(shasum -a 256 "$APP_INTERNAL/Contents/Resources/InternalIcon_ug
 assert_equals "$(shasum -a 256 "$APP_INTERNAL/Contents/Resources/InternalIcon.icns" | awk '{print $1}')" "$(shasum -a 256 "$REPLACEMENT_ICON" | awk '{print $1}')"
 
 rm -f "$FAKE_LOG_DIR/"*.log
+run_restore "$OUTPUT" "$APP_INTERNAL"
+assert_file_contains "$OUTPUT" "Restored icon: $APP_INTERNAL/Contents/Resources/InternalIcon.icns"
+assert_equals "$(shasum -a 256 "$APP_INTERNAL/Contents/Resources/InternalIcon.icns" | awk '{print $1}')" "$ORIGINAL_INTERNAL_SUM"
+assert_file_not_contains "$FAKE_LOG_DIR/native-icon.log" "remove $APP_INTERNAL"
+
+rm -f "$FAKE_LOG_DIR/"*.log
 ORIGINAL_FILEICON_SUM="$(shasum -a 256 "$APP_FILEICON/Contents/Resources/FileiconIcon.icns" | awk '{print $1}')"
 run_apply "$OUTPUT" "$APP_FILEICON" --icon "$REPLACEMENT_ICON" --strategy fileicon
 assert_file_contains "$OUTPUT" "Strategy: native"
@@ -304,12 +310,12 @@ create_fake_app "$APP_DRY_RUN" "com.example.dryrun" loose "DryRunIcon"
 DRYRUN_BEFORE="$(shasum -a 256 "$APP_DRY_RUN/Contents/Resources/DryRunIcon.icns" | awk '{print $1}')"
 rm -f "$FAKE_LOG_DIR/"*.log
 run_apply "$OUTPUT" "$APP_DRY_RUN" --icon "$REPLACEMENT_ICON" --dry-run
-assert_file_contains "$OUTPUT" "Strategy: internal-icns"
+assert_file_contains "$OUTPUT" "Strategy: native"
+assert_file_contains "$OUTPUT" "Planned Finder custom icon target"
 assert_not_exists "$APP_DRY_RUN/Contents/Resources/DryRunIcon_ugly.icns"
 assert_equals "$(shasum -a 256 "$APP_DRY_RUN/Contents/Resources/DryRunIcon.icns" | awk '{print $1}')" "$DRYRUN_BEFORE"
 assert_not_exists "$FAKE_LOG_DIR/touch.log"
-assert_file_contains "$FAKE_LOG_DIR/codesign.log" "-dv --verbose=4 $APP_DRY_RUN"
-assert_file_not_contains "$FAKE_LOG_DIR/codesign.log" "--force --deep --sign - $APP_DRY_RUN"
+assert_not_exists "$FAKE_LOG_DIR/codesign.log"
 assert_file_not_contains "$FAKE_LOG_DIR/native-icon.log" "set $APP_DRY_RUN"
 
 set +e
@@ -331,11 +337,30 @@ APP_COMPAT="$ABS_TEST_DIR/Compat.app"
 create_fake_app "$APP_COMPAT" "com.example.compat" loose "CompatIcon"
 rm -f "$FAKE_LOG_DIR/"*.log
 run_apply "$OUTPUT" "$APP_COMPAT" --icon "$REPLACEMENT_ICON"
+assert_file_contains "$OUTPUT" "Strategy: native"
+assert_not_exists "$APP_COMPAT/Contents/Resources/CompatIcon_ugly.icns"
+assert_not_exists "$FAKE_LOG_DIR/touch.log"
+assert_not_exists "$FAKE_LOG_DIR/codesign.log"
+assert_file_contains "$FAKE_LOG_DIR/native-icon.log" "set $APP_COMPAT $REPLACEMENT_ICON"
+
+APP_FALLBACK="$ABS_TEST_DIR/Fallback.app"
+create_fake_app "$APP_FALLBACK" "com.example.fallback" loose "FallbackIcon"
+rm -f "$FAKE_LOG_DIR/"*.log
+mv "$FAKE_BIN/iconforge-native-icon" "$FAKE_BIN/iconforge-native-icon.disabled"
+run_apply_without_native_helper "$OUTPUT" "$APP_FALLBACK" --icon "$REPLACEMENT_ICON"
+mv "$FAKE_BIN/iconforge-native-icon.disabled" "$FAKE_BIN/iconforge-native-icon"
 assert_file_contains "$OUTPUT" "Strategy: internal-icns"
-assert_file_exists "$APP_COMPAT/Contents/Resources/CompatIcon_ugly.icns"
-assert_file_contains "$FAKE_LOG_DIR/touch.log" "$APP_COMPAT"
-assert_file_contains "$FAKE_LOG_DIR/codesign.log" "$APP_COMPAT"
-assert_file_contains "$FAKE_LOG_DIR/codesign.log" "--verify --deep --strict --all-architectures $APP_COMPAT"
+assert_file_exists "$APP_FALLBACK/Contents/Resources/FallbackIcon_ugly.icns"
+
+rm -f "$FAKE_LOG_DIR/"*.log
+mv "$FAKE_BIN/iconforge-native-icon" "$FAKE_BIN/iconforge-native-icon.disabled"
+set +e
+run_apply_without_native_helper "$OUTPUT" "$APP_ASSET" --icon "$REPLACEMENT_ICON"
+STATUS=$?
+set -e
+mv "$FAKE_BIN/iconforge-native-icon.disabled" "$FAKE_BIN/iconforge-native-icon"
+[[ "$STATUS" -ne 0 ]] || { echo "❌ Asset-backed app should not fall back without the native helper"; exit 1; }
+assert_file_contains "$OUTPUT" "asset-catalog backed"
 
 APP_VENDOR_SIGNED="$ABS_TEST_DIR/VendorSigned.app"
 create_fake_app "$APP_VENDOR_SIGNED" "com.example.vendor-signed" loose "VendorIcon"
@@ -343,10 +368,19 @@ APP_VENDOR_SIGNED_REALPATH="$(cd "$(dirname "$APP_VENDOR_SIGNED")" && pwd)/$(bas
 rm -f "$FAKE_LOG_DIR/native-icon-active" "$FAKE_LOG_DIR/"*.log
 run_apply "$OUTPUT" "$APP_VENDOR_SIGNED" --icon "$REPLACEMENT_ICON"
 assert_file_contains "$OUTPUT" "Strategy: native"
-assert_file_contains "$FAKE_LOG_DIR/codesign.log" "-dv --verbose=4 $APP_VENDOR_SIGNED_REALPATH"
 assert_file_contains "$FAKE_LOG_DIR/native-icon.log" "set $APP_VENDOR_SIGNED_REALPATH $REPLACEMENT_ICON"
 assert_not_exists "$APP_VENDOR_SIGNED/Contents/Resources/VendorIcon_ugly.icns"
-assert_file_not_contains "$FAKE_LOG_DIR/codesign.log" "--force --deep --sign - $APP_VENDOR_SIGNED_REALPATH"
+assert_not_exists "$FAKE_LOG_DIR/codesign.log"
+
+rm -f "$FAKE_LOG_DIR/"*.log
+mv "$FAKE_BIN/iconforge-native-icon" "$FAKE_BIN/iconforge-native-icon.disabled"
+set +e
+run_apply_without_native_helper "$OUTPUT" "$APP_VENDOR_SIGNED" --icon "$REPLACEMENT_ICON"
+STATUS=$?
+set -e
+mv "$FAKE_BIN/iconforge-native-icon.disabled" "$FAKE_BIN/iconforge-native-icon"
+[[ "$STATUS" -ne 0 ]] || { echo "❌ Vendor-signed app should not fall back without the native helper"; exit 1; }
+assert_file_contains "$OUTPUT" "vendor signed"
 
 APP_VERIFY_FAIL="$ABS_TEST_DIR/VerifyFail.app"
 create_fake_app "$APP_VERIFY_FAIL" "com.example.verify-fail" loose "VerifyFailIcon"
@@ -375,6 +409,28 @@ assert_file_contains "$FAKE_LOG_DIR/native-icon.log" "set $APP_EXISTING_NATIVE_R
 assert_not_exists "$APP_EXISTING_NATIVE/Contents/Resources/ExistingNativeIcon_ugly.icns"
 assert_not_exists "$FAKE_LOG_DIR/touch.log"
 assert_not_exists "$FAKE_LOG_DIR/codesign.log"
+
+APP_LEGACY="$ABS_TEST_DIR/Legacy.app"
+create_fake_app "$APP_LEGACY" "com.example.legacy" loose "LegacyIcon"
+run_apply "$OUTPUT" "$APP_LEGACY" --icon "$REPLACEMENT_ICON" --strategy internal-icns
+rm -f "$FAKE_LOG_DIR/native-icon-active" "$FAKE_LOG_DIR/"*.log
+run_apply "$OUTPUT" "$APP_LEGACY" --icon "$REPLACEMENT_ICON"
+assert_file_contains "$OUTPUT" "Strategy: native"
+assert_file_contains "$OUTPUT" "A legacy internal icon backup remains"
+assert_file_contains "$OUTPUT" "reinstall that app from its trusted source"
+
+rm -f "$FAKE_LOG_DIR/"*.log
+run_restore "$OUTPUT" "$APP_LEGACY"
+assert_file_contains "$OUTPUT" "Restored icon: $APP_LEGACY/Contents/Resources/LegacyIcon.icns"
+assert_file_contains "$OUTPUT" "Removed Finder custom icon: $APP_LEGACY"
+assert_file_contains "$FAKE_LOG_DIR/native-icon.log" "remove $APP_LEGACY"
+
+run_apply "$OUTPUT" "$APP_LEGACY" --icon "$REPLACEMENT_ICON" --strategy native
+rm -f "$FAKE_LOG_DIR/"*.log
+run_restore "$OUTPUT" "$APP_LEGACY" --dry-run
+assert_file_contains "$OUTPUT" "Planned restore target: $APP_LEGACY/Contents/Resources/LegacyIcon.icns"
+assert_file_contains "$OUTPUT" "Planned removal of Finder custom icon: $APP_LEGACY"
+assert_file_not_contains "$FAKE_LOG_DIR/native-icon.log" "remove $APP_LEGACY"
 
 APP_PROTECTED="$ABS_TEST_DIR/Protected.app"
 create_fake_app "$APP_PROTECTED" "com.example.protected" loose "ProtectedIcon"

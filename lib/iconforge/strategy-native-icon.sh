@@ -32,6 +32,7 @@ require_native_icon_helper() {
 
 strategy_native_icon_apply() {
   local icon_file="$1"
+  local legacy_backup=""
 
   require_native_icon_helper || return 1
   require_app_bundle_path "$APP_PATH" || return 1
@@ -47,6 +48,12 @@ strategy_native_icon_apply() {
 
   if [[ "$ICONFORGE_DRY_RUN" != true ]]; then
     run_quiet_cmd "$ICONFORGE_NATIVE_ICON" test "$APP_PATH" || fail "Native helper did not persist a usable Finder custom icon for $APP_PATH" || return 1
+  fi
+
+  legacy_backup="$(find_restore_backup || true)"
+  if [[ -n "$legacy_backup" ]]; then
+    warn "A legacy internal icon backup remains at $legacy_backup."
+    warn "If an earlier Icon Forge release modified a vendor app internally, reinstall that app from its trusted source to recover the original vendor signature, then apply the native icon again."
   fi
 }
 
