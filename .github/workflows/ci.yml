@@ -1,0 +1,49 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+env:
+  GOPROXY: "off"
+
+jobs:
+  test:
+    name: macOS (${{ matrix.runner }})
+    strategy:
+      fail-fast: false
+      matrix:
+        runner:
+          - macos-15
+          - macos-15-intel
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: iconforge-processor/go.mod
+          cache-dependency-path: iconforge-processor/go.sum
+
+      - name: Install shell lint
+        run: brew install shellcheck
+
+      - name: Lint
+        run: make lint
+
+      - name: Test
+        run: make test
+
+      - name: Check both macOS architectures
+        run: make build-all
+
+      - name: Validate generated Homebrew formula integration contract
+        run: bash tests/test-homebrew-formula.sh
+
+      - name: Confirm checks left the tree unchanged
+        run: git diff --exit-code

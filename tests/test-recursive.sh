@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+TEST_NAME="recursive directory scan"
+source tests/test-common.sh
+
+test_run "$TEST_NAME"
+
+IMG_DIR="$TEST_DIR/assets"
+mkdir -p "$IMG_DIR"
+cp "$TEST_IMAGE1" "$IMG_DIR/sample1.png"
+cp "$TEST_IMAGE2" "$IMG_DIR/sample2.jpg"
+
+"$ICONFORGE" forge "$IMG_DIR" -r -o "$TEST_DIR" -k
+
+assert_file_exists "$TEST_DIR/sample1.icns"
+assert_file_exists "$TEST_DIR/sample2.icns"
+
+test_pass "$TEST_NAME passed"
