@@ -3,8 +3,10 @@ set -euo pipefail
 
 TEST_NAME="complete CLI parser table"
 source tests/test-common.sh
+unset XDG_CONFIG_HOME || true
 
 BIN="$PWD/iconforge.sh"
+EXPECTED_VERSION="$(tr -d '[:space:]' < VERSION)"
 ABS_TEST_DIR="$PWD/$TEST_DIR"
 OUTPUT="$ABS_TEST_DIR/output.log"
 INPUT="$ABS_TEST_DIR/parser-input.png"
@@ -68,7 +70,7 @@ for flag in -h --help; do
 done
 for flag in -v --version; do
   assert_status 0 "$flag"
-  grep -Fx "iconforge v2.0.0" "$OUTPUT" >/dev/null || {
+  grep -Fx "iconforge v$EXPECTED_VERSION" "$OUTPUT" >/dev/null || {
     test_fail "Root $flag did not print only the version"
     exit 1
   }
@@ -78,10 +80,25 @@ grep -F "Strategy: native" "$OUTPUT" >/dev/null || {
   test_fail "apply -v did not remain in apply/verbose context"
   exit 1
 }
-if grep -Fx "iconforge v2.0.0" "$OUTPUT" >/dev/null; then
+if grep -Fx "iconforge v$EXPECTED_VERSION" "$OUTPUT" >/dev/null; then
   test_fail "apply -v was interpreted as the root version flag"
   exit 1
 fi
+
+# Config: the complete action/key grammar and unset behavior.
+CONFIG_DEFAULT="$ABS_TEST_DIR/config default"
+assert_status 0 config set default-directory "$CONFIG_DEFAULT"
+assert_status 0 config get default-directory
+grep -Fx "$CONFIG_DEFAULT" "$OUTPUT" >/dev/null || {
+  test_fail "Config get did not print the saved path"
+  exit 1
+}
+assert_status 0 config unset default-directory
+assert_status 1 config get default-directory
+assert_status 0 config unset default-directory
+for flag in -h --help; do
+  assert_status 0 config "$flag"
+done
 
 # Forge: every short and long spelling.
 for flag in -o --output; do
@@ -168,6 +185,10 @@ set -e
 [[ "$forge_marker_status" -eq 0 ]] || { cat "$OUTPUT"; test_fail "Forge -- marker failed"; exit 1; }
 
 assert_status 0 help -- apply
+assert_status 0 help -- config
+LEADING_CONFIG_DIR="$ABS_TEST_DIR/-leading-config-directory"
+assert_status 0 config set default-directory -- "$LEADING_CONFIG_DIR"
+assert_status 0 config unset default-directory
 assert_status 0 inspect -- "$APP"
 assert_status 0 apply -d -i "$ICON" -- "$APP"
 assert_recognized restore -d -- "$APP"
@@ -176,6 +197,7 @@ assert_recognized nuke -d -- "$APP"
 # Short-option clusters are rejected consistently.
 assert_status 2 -hv
 assert_status 2 help -hh
+assert_status 2 config -hh
 assert_status 2 forge "$INPUT" -kd
 assert_status 2 inspect -hh
 assert_status 2 apply "$APP" -i "$ICON" -dn
@@ -185,6 +207,7 @@ assert_status 2 nuke -dh
 # Long options never accept an equals-sign value form.
 assert_status 2 --help=yes
 assert_status 2 help --help=yes
+assert_status 2 config --help=yes
 assert_status 2 forge "$INPUT" "--output=$FORGE_OUTPUT"
 assert_status 2 inspect --help=yes
 assert_status 2 apply "$APP" "--icon=$ICON"
@@ -206,6 +229,11 @@ done
 for flag in -a --all; do
   assert_status 2 apply "$flag"
 done
+assert_status 2 config set default-directory
+assert_status 2 config set default-directory ''
+assert_status 2 config get
+assert_status 2 config unset default-directory extra
+assert_status 2 config unknown default-directory
 assert_status 2 --
 
 # Removed flags, command-level versions, and the obsolete strategy alias fail
@@ -217,7 +245,7 @@ done
 for flag in -c --refresh-caches -r --icon-root -f --force-asset -S --no-resign; do
   assert_status 2 apply "$APP" -i "$ICON" "$flag"
 done
-for command in forge inspect restore nuke help; do
+for command in forge config inspect restore nuke help; do
   assert_status 2 "$command" -v
   assert_status 2 "$command" -V
   assert_status 2 "$command" --version

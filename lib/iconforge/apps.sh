@@ -21,11 +21,11 @@ Apply one icon directly or apply a directory of icons in bulk.
 
 Usage:
   iconforge apply <app> -i <file.icns> [options]
-  iconforge apply -a <directory> [options]
+  iconforge apply -a [directory] [options]
 
 Options:
   -i, --icon <file>       ICNS file for a direct apply
-  -a, --all               Apply all eligible ICNS files under <directory>
+  -a, --all               Apply all eligible ICNS files under [directory]
   -s, --strategy <name>  Direct strategy: native or internal-icns
   -n, --nuke              Run Nuke once after a successful apply
   -d, --dry-run           Validate and show work without changing anything
@@ -34,7 +34,8 @@ Options:
 
 The native AppKit strategy is the default and the only bulk strategy.
 internal-icns is an explicit expert operation that modifies and ad-hoc signs a
-writable loose-icon app bundle. Use -- before positional values beginning '-'.
+writable loose-icon app bundle. Without [directory], bulk mode uses the saved
+default. Use -- before positional values beginning '-'.
 EOF
 }
 
@@ -474,7 +475,14 @@ cmd_apply() {
   if [[ "$apply_all" == true ]]; then
     [[ "$icon_seen" != true ]] || { usage_fail "--all cannot be combined with --icon"; return 2; }
     [[ "$strategy_seen" != true ]] || { usage_fail "--strategy is available only for direct apply"; return 2; }
-    [[ "$app_seen" == true ]] || { usage_fail "--all requires exactly one icon directory"; return 2; }
+    if [[ "$app_seen" != true ]]; then
+      load_iconforge_config || return 1
+      [[ "$ICONFORGE_HAS_DEFAULT_DIRECTORY" == true ]] || {
+        usage_fail "--all requires an icon directory or a configured default-directory" || return 2
+      }
+      app_arg="$ICONFORGE_DEFAULT_DIRECTORY"
+      app_seen=true
+    fi
     [[ -d "$app_arg" ]] || { fail "Icon directory not found: $app_arg"; return 1; }
     [[ "$do_nuke" != true ]] || nuke_validate_current_user || return 1
     cmd_apply_bulk "$app_arg" "$do_nuke" "$verbose"

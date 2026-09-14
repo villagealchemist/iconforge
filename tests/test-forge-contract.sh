@@ -3,6 +3,7 @@ set -euo pipefail
 
 TEST_NAME="forge contract"
 source tests/test-common.sh
+export XDG_CONFIG_HOME="$PWD/$TEST_DIR/config-home"
 
 test_run "$TEST_NAME"
 mkdir -p "$TEST_DIR/input/chat" "$TEST_DIR/input/music" "$TEST_DIR/input/_drafts" \

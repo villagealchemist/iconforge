@@ -5,7 +5,7 @@ An IconForge release coordinates two repositories:
 - `villagealchemist/iconforge` owns source, version, tests, documentation, the annotated tag, and the formula template.
 - `villagealchemist/homebrew-iconforge` owns the published tap formula.
 
-The release artifact is source. GitHub hosts one source-only release, and Homebrew builds both IconForge-owned helpers
+The release artifact is source. Each GitHub release is source-only, and Homebrew builds both IconForge-owned helpers
 from an exact source commit. Do not publish prebuilt compiled binaries, bottles, disk images, or installer packages.
 
 ## Release invariants
@@ -45,6 +45,7 @@ Confirm the public surface directly:
 ```bash
 ./iconforge.sh --version
 ./iconforge.sh --help
+./iconforge.sh config --help
 ./iconforge.sh forge --help
 ./iconforge.sh inspect --help
 ./iconforge.sh apply --help
@@ -168,25 +169,29 @@ iconforge --version
 Then perform a clean-cache tap test from the candidate tap and compare installed help and behavior with the source
 installation. A version-only check is insufficient because it does not load the processor or native helper.
 
-## 2.0.0 history gate
+## Historical 2.0.0 topology
 
 The corrected public 2.0.0 source history has one commit directly above `v1.0.0`:
 
 ```bash
 test "$(git rev-list --count v1.0.0..v2.0.0)" -eq 1
-test "$(git rev-parse v2.0.0^{commit})" = "$(git rev-parse main)"
 test "$(git rev-parse v2.0.0^{commit}^)" = "$(git rev-parse v1.0.0^{commit})"
+git merge-base --is-ancestor v2.0.0 main
 ```
+
+This is a historical integrity check for the corrected 2.0.0 release, not the topology or publication procedure for a
+later version. Normal later releases advance `main` with a new commit and add a new annotated tag without rewriting old
+release refs.
 
 Publish source before changing the tap. Keep the private rescue refs and the previously working public state available
 until the new source archive, CI, isolated source install, formula, and clean Homebrew install all pass.
 
 After every gate succeeds:
 
-1. Make `main` and annotated `v2.0.0` identify the same corrected source commit.
+1. Make `main` and the annotated `v$version` tag identify the same reviewed source commit.
 2. Verify the public commit archive and checksum.
 3. Publish the tested tap formula pinned to that commit.
-4. Create one source-only `v2.0.0` GitHub release and mark it latest.
+4. Create one source-only `v$version` GitHub release and mark it latest.
 5. Audit public branches, tags, release objects, tap history, formula contents, installed help, and fresh-install behavior.
 6. Retain rescue refs until that final audit is complete.
 

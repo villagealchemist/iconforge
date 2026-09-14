@@ -11,19 +11,20 @@ create_app() {
   local app="$1"
   local bundle_id="$2"
   local display_name="$3"
+  local bundle_name="${4:-$display_name}"
   mkdir -p "$app/Contents"
   plutil -create xml1 "$app/Contents/Info.plist"
   plutil -insert CFBundleIdentifier -string "$bundle_id" "$app/Contents/Info.plist"
   plutil -insert CFBundleDisplayName -string "$display_name" "$app/Contents/Info.plist"
-  plutil -insert CFBundleName -string "$display_name" "$app/Contents/Info.plist"
+  plutil -insert CFBundleName -string "$bundle_name" "$app/Contents/Info.plist"
 }
 
 ROOT="$PWD/$TEST_DIR/apps"
 EMPTY="$PWD/$TEST_DIR/empty"
 mkdir -p "$ROOT/Utilities" "$ROOT/Too/Deep" "$EMPTY"
 create_app "$ROOT/Visual Studio Code.app" com.example.code "Visual Studio Code"
-create_app "$ROOT/Google Chrome.app" com.example.chrome "Google Chrome"
-create_app "$ROOT/Google Chrome Dev.app" com.example.chrome-dev "Google Chrome Dev"
+create_app "$ROOT/Google Chrome.app" com.google.Chrome "Google Chrome" "Chrome"
+create_app "$ROOT/Google Chrome Dev.app" com.google.Chrome.dev "Google Chrome Dev" "Chrome Dev"
 create_app "$ROOT/Utilities/Café—Studio.app" com.example.cafe "Café—Studio"
 create_app "$ROOT/Uppercase.APP" com.example.uppercase "Uppercase"
 create_app "$ROOT/Too/Deep/Invisible.app" com.example.invisible "Invisible"
@@ -46,8 +47,24 @@ match_application_name "café studio"
 match_application_name "café"
 [[ "$MATCH_STATUS" == matched-partial ]] || { test_fail "Expected a unique partial suggestion"; exit 1; }
 
-set +e
+match_application_name "google-chrome"
+[[ "$MATCH_STATUS" == matched-exact ]] || { test_fail "Expected exact Chrome Stable match"; exit 1; }
+[[ "$(discovered_app_bundle_id "$MATCH_RECORD")" == com.google.Chrome ]] || { test_fail "Chrome Stable selected wrong app"; exit 1; }
+
+match_application_name "google-chrome-dev"
+[[ "$MATCH_STATUS" == matched-exact ]] || { test_fail "Expected exact Chrome Dev match"; exit 1; }
+[[ "$(discovered_app_bundle_id "$MATCH_RECORD")" == com.google.Chrome.dev ]] || { test_fail "Chrome Dev selected wrong app"; exit 1; }
+
 match_application_name "chrome"
+[[ "$MATCH_STATUS" == matched-exact ]] || { test_fail "Expected exact short Chrome Stable match"; exit 1; }
+[[ "$(discovered_app_bundle_id "$MATCH_RECORD")" == com.google.Chrome ]] || { test_fail "Short Chrome Stable key selected wrong app"; exit 1; }
+
+match_application_name "chrome-dev"
+[[ "$MATCH_STATUS" == matched-exact ]] || { test_fail "Expected exact short Chrome Dev match"; exit 1; }
+[[ "$(discovered_app_bundle_id "$MATCH_RECORD")" == com.google.Chrome.dev ]] || { test_fail "Short Chrome Dev key selected wrong app"; exit 1; }
+
+set +e
+match_application_name "google"
 STATUS=$?
 set -e
 [[ "$STATUS" -ne 0 && "$MATCH_STATUS" == ambiguous-partial ]] || { test_fail "Ambiguous partial did not fail closed"; exit 1; }

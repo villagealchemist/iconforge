@@ -2,6 +2,23 @@
 
 All notable user-facing changes to IconForge are recorded here.
 
+## 2.1.0
+
+### Configuration
+
+- Added `iconforge config set|get|unset default-directory` for one optional, structured user preference shared by forge
+  output and bulk apply. Relative values are saved as stable absolute paths, explicit command-line directories take
+  precedence, and shell configuration is never sourced.
+- Forge now uses the configured directory when `-o/--output` is omitted, falling back to the current directory when the
+  preference is unset.
+- Bulk `apply -a/--all` now accepts an omitted directory when a default is configured. Without either an explicit or
+  configured directory, it retains the existing usage error.
+
+### Applications
+
+- Documented exact channel-specific bulk names such as `google-chrome.icns` and `google-chrome-dev.icns`, allowing
+  separately installed Chrome channels to receive distinct icons without alias collisions.
+
 ## 2.0.0
 
 IconForge 2 is a stateless macOS icon workflow: forge complete ICNS files, inspect app icon metadata, apply icons

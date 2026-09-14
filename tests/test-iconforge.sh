@@ -8,6 +8,7 @@ BIN="$PWD/iconforge.sh"
 OUTPUT_DIR="$PWD/$TEST_DIR/output"
 LOG="$PWD/$TEST_DIR/output.log"
 mkdir -p "$OUTPUT_DIR"
+export XDG_CONFIG_HOME="$PWD/$TEST_DIR/config-home"
 
 "$BIN" "$TEST_IMAGE1" "My Icon" -o "$OUTPUT_DIR" -k
 assert_file_exists "$OUTPUT_DIR/My Icon.icns"

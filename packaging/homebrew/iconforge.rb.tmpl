@@ -41,6 +41,15 @@ class Iconforge < Formula
       "0000000b4944415478da6364f80f00010501012718e3660000000049454e44ae426082",
     ].join
     (testpath/"test.png").binwrite [png].pack("H*")
+
+    ENV["XDG_CONFIG_HOME"] = (testpath/"config").to_s
+    default_output = testpath/"default-output"
+    system bin/"iconforge", "config", "set", "default-directory", default_output
+    assert_equal default_output.to_s,
+                 shell_output("#{bin}/iconforge config get default-directory").strip
+    system bin/"iconforge", "forge", testpath/"test.png"
+    assert_path_exists default_output/"test.icns"
+
     system bin/"iconforge", "forge", testpath/"test.png",
            "--output", testpath/"output"
     icns = testpath/"output/test.icns"

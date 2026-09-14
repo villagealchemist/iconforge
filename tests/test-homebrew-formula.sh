@@ -78,6 +78,26 @@ grep -Fq 'system bin/"iconforge", "forge"' "$FORMULA" || {
   exit 1
 }
 
+grep -Fq 'ENV["XDG_CONFIG_HOME"] = (testpath/"config").to_s' "$FORMULA" || {
+  test_fail "Formula test does not isolate the installed configuration"
+  exit 1
+}
+
+grep -Fq 'system bin/"iconforge", "config", "set", "default-directory", default_output' "$FORMULA" || {
+  test_fail "Formula test does not configure the installed default directory"
+  exit 1
+}
+
+grep -Fq 'shell_output("#{bin}/iconforge config get default-directory").strip' "$FORMULA" || {
+  test_fail "Formula test does not read back the installed default directory"
+  exit 1
+}
+
+grep -Fxq '    system bin/"iconforge", "forge", testpath/"test.png"' "$FORMULA" || {
+  test_fail "Formula test does not forge through the configured default directory"
+  exit 1
+}
+
 grep -Fq 'assert_path_exists icns' "$FORMULA" || {
   test_fail "Formula test does not assert the forged ICNS output"
   exit 1

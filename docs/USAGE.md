@@ -1,12 +1,13 @@
 # IconForge command reference
 
-This is the complete public reference for IconForge 2.0.0. It describes the source tree, the source installation, and
-the Homebrew formula built from that source.
+This is the complete command reference for the current IconForge source. It describes the source tree, the source
+installation, and the Homebrew formula built from that source.
 
 ## Contents
 
 - [Operating model](#operating-model)
 - [Invocation and parsing](#invocation-and-parsing)
+- [`config`](#config)
 - [`forge`](#forge)
 - [Application resolution](#application-resolution)
 - [`inspect`](#inspect)
@@ -20,19 +21,21 @@ the Homebrew formula built from that source.
 
 ## Operating model
 
-IconForge is a stateless macOS command-line tool.
+IconForge is a macOS command-line tool with one optional persisted preference: a default icon directory shared by forge
+output and bulk apply.
 
-- Each invocation receives its image, application, icon directory, and output directory explicitly.
-- The current directory is the only default forge destination.
-- Bulk application always requires `-a/--all` and a directory on that same command line.
-- No shell file, environment variable, preference file, or prior invocation supplies product defaults.
+- Inputs, application selections, strategies, and mutation options remain explicit on every invocation.
+- An explicit forge output or bulk icon directory always overrides the configured default for that invocation.
+- Without a configured default, forge writes to the current directory and bulk apply requires an explicit directory.
+- Bulk application always requires `-a/--all`; configuring a directory does not make a bare command scan or mutate apps.
+- IconForge reads its own structured preference file and never sources shell configuration.
 - Temporary work uses the standard per-user temporary directory when macOS provides one and otherwise `/tmp`.
 - Dry runs inspect and validate real inputs but do not write outputs, change applications, remove caches, or restart
   user processes.
 
 The public installation contains three cooperating pieces:
 
-1. A Bash entry point and Bash libraries for parsing, planning, app discovery, and safe orchestration.
+1. A Bash entry point and Bash libraries for configuration, parsing, planning, app discovery, and safe orchestration.
 2. An IconForge-owned Go processor for decoding, resizing, PNG normalization, and ICNS assembly.
 3. An IconForge-owned Objective-C/AppKit helper for Finder custom icons and read-only ICNS validation.
 
@@ -47,6 +50,7 @@ specific to macOS.
 iconforge [root-option]
 iconforge <command> [arguments] [options]
 iconforge help [command]
+iconforge config <set|get|unset> default-directory [directory]
 iconforge <existing-supported-image> [forge-arguments] [forge-options]
 iconforge -- <existing-supported-image> [forge-arguments]
 ```
@@ -56,14 +60,14 @@ Root options:
 | Short | Long        | Meaning                    |
 |-------|-------------|----------------------------|
 | `-h`  | `--help`    | Print root help            |
-| `-v`  | `--version` | Print `iconforge v2.0.0`   |
+| `-v`  | `--version` | Print `iconforge v2.1.0`   |
 
 No arguments prints root help and exits successfully. `iconforge forge` without an input prints forge help and exits
 with an error; there is no prompt-driven setup mode.
 
-The command names are `forge`, `inspect`, `apply`, `restore`, `nuke`, and `help`. An unknown word is a command error
-unless it resolves to an existing supported image path. A command name wins over a same-named file; address that file
-with `./`, an absolute path, or root `--`.
+The command names are `config`, `forge`, `inspect`, `apply`, `restore`, `nuke`, and `help`. An unknown word is a command
+error unless it resolves to an existing supported image path. A command name wins over a same-named file; address that
+file with `./`, an absolute path, or root `--`.
 
 `iconforge help` prints the root overview. It accepts one command name to print that command's help and recognizes
 `-h/--help` as another spelling of the root overview. Use `iconforge help -- <command>` when an explicit
@@ -74,6 +78,7 @@ Examples:
 ```bash
 iconforge -v
 iconforge --version
+iconforge help config
 iconforge help apply
 iconforge ./artwork.png
 iconforge -- -strange-name.png
@@ -111,6 +116,65 @@ Bulk apply may skip expected unmatched, ambiguous, or declined entries and still
 applied at least one icon and encountered no validation or mutation failures. A bulk run with nothing eligible returns
 nonzero.
 
+## `config`
+
+Manage IconForge's one persisted preference: the default directory used for forge output and as the icon-library root
+for bulk apply.
+
+### Syntax
+
+```text
+iconforge config set default-directory <directory>
+iconforge config get default-directory
+iconforge config unset default-directory
+```
+
+`set` resolves the supplied path to a stable absolute path at configuration time. A relative path therefore remains
+pointed at the same directory when IconForge is later run from another working directory. The final directory need not
+exist yet, so configuration may come before the first forge; its nearest existing ancestor must be a directory, and the
+configured value may not be empty or `/`. Dangling symlinks are rejected. `set` does not create the directory itself.
+
+`get` prints only the configured absolute path to standard output. When no value is set, it prints
+`Default icon directory is not set` to standard error and returns status `1`. `unset` removes the preference and succeeds
+even when it was already absent.
+
+The setting is stored as the string key `default_directory` in `~/.config/iconforge/config.plist`, or under an absolute
+`$XDG_CONFIG_HOME` when that variable is set. IconForge treats the file as structured data; it never executes it. A
+malformed file or a `default_directory` value with the wrong type fails closed with an explanation instead of silently
+selecting another directory. The plist itself must be a regular file rather than a symlink; `unset` removes only that
+one preference file. The configured target is resolved again before use, so a path later redirected to `/` or left as a
+dangling symlink is rejected. Legacy `.iconforgerc`, runtime `.iconforge*.env`, `ICONFORGE_ICON_ROOT`, and the old
+`icon_root` plist key are not loaded as defaults.
+
+### Directory precedence
+
+| Operation   | First choice                       | Then                       | Without either             |
+|-------------|------------------------------------|----------------------------|----------------------------|
+| Forge       | Explicit `-o/--output <directory>` | Configured default         | Current directory          |
+| Bulk apply  | Directory supplied with `-a/--all` | Configured default         | Usage error, status `2`    |
+
+The forge rule also applies to image-first shorthand. Supplying an explicit directory changes only that invocation; it
+does not update the preference. Direct apply, inspect, restore, and Nuke do not use the configured directory.
+
+Examples:
+
+```bash
+iconforge config set default-directory "$HOME/app-icons"
+iconforge config get default-directory
+
+# Uses $HOME/app-icons as the destination.
+iconforge forge ./artwork.png discord
+
+# Uses $HOME/app-icons as the bulk icon root.
+iconforge apply --all --dry-run --verbose
+
+# Overrides the preference for this invocation only.
+iconforge forge ./artwork.png --output ./preview
+iconforge apply --all ./other-icons --dry-run
+
+iconforge config unset default-directory
+```
+
 ## `forge`
 
 Turn supported artwork into one or more `.icns` files.
@@ -128,7 +192,7 @@ Options:
 
 | Short | Long          | Value   | Meaning                                                  |
 |-------|---------------|---------|----------------------------------------------------------|
-| `-o`  | `--output`    | `<dir>` | Destination directory; default is the current directory  |
+| `-o`  | `--output`    | `<dir>` | Destination; overrides the configured or current default |
 | `-k`  | `--keep-png`  | none    | Keep one normalized full-size PNG beside each ICNS       |
 | `-r`  | `--recursive` | none    | Permit recursive processing of one directory             |
 | `-f`  | `--force`     | none    | Replace pre-existing regular output files without asking |
@@ -153,11 +217,12 @@ detail, so inspect the result before applying it.
 
 ### Single and multiple inputs
 
-Without `--recursive`, each operand must be a supported image file. The normal output name is the input's filename stem
-with its spaces and Unicode characters preserved:
+Without `--recursive`, each operand must be a supported image file. The destination is the explicit `-o/--output`
+directory, then the configured default, then the current directory. The normal output name is the input's filename
+stem with its spaces and Unicode characters preserved:
 
 ```text
-./art/My Great Icon.png → ./My Great Icon.icns
+./art/My Great Icon.png → <destination>/My Great Icon.icns
 ```
 
 A final output name is accepted only for one image. It is a basename, not a path: it must be nonempty after its optional
@@ -237,7 +302,11 @@ planned outputs and planned replacements but does not ask the overwrite question
 ### Forge examples
 
 ```bash
-# Image-first, current-directory output
+# With no configured default, image-first output uses the current directory
+iconforge ./logo.png
+
+# Save and use a default output directory on later invocations
+iconforge config set default-directory "$HOME/app-icons"
 iconforge ./logo.png
 
 # Explicit command and output directory
@@ -409,26 +478,28 @@ iconforge apply "/path/to/Disposable.app" -i ./Test.icns -s internal-icns
 
 ## Bulk `apply`
 
-Match regular `.icns` files below one explicit directory to installed applications and apply them natively.
+Match regular `.icns` files below an explicit or configured directory to installed applications and apply them
+natively.
 
 ### Syntax and options
 
 ```text
-iconforge apply -a <directory> [options]
-iconforge apply --all <directory> [options]
+iconforge apply -a [directory] [options]
+iconforge apply --all [directory] [options]
 ```
 
 | Short | Long        | Value   | Meaning                                         |
 |-------|-------------|---------|-------------------------------------------------|
-| `-a`  | `--all`     | none    | Select bulk mode; followed by one directory     |
+| `-a`  | `--all`     | none    | Select bulk mode; accepts one optional directory |
 | `-n`  | `--nuke`    | none    | Run Nuke once after at least one successful apply |
 | `-d`  | `--dry-run` | none    | Validate and preview without changing apps      |
 | `-v`  | `--verbose` | none    | Print a status line for each icon entry         |
 | `-h`  | `--help`    | none    | Print apply help                                |
 
-`-a/--all` is a selector, not a directory-valued option; the directory is the required positional operand that follows
-it. Exactly one directory is accepted. Bulk mode rejects `--icon` and `--strategy`. Bare `iconforge apply` is an error
-and never scans anything.
+`-a/--all` is a selector, not a directory-valued option. At most one positional directory may accompany it. When that
+operand is omitted, IconForge uses `default-directory`; without one configured, the command is a usage error with
+status `2`. An explicit directory overrides the preference for that invocation. Bulk mode rejects `--icon` and
+`--strategy`. Bare `iconforge apply` remains an error and never scans anything.
 
 ### Icon scan
 
@@ -440,12 +511,20 @@ files and does not follow symlinks. It prunes:
 - `.app` and `.iconset` directory trees.
 - Internal rollback-backup filenames.
 
-The filename stem, not its parent directory, is the app key:
+The filename stem, not its parent directory, is the app key. Lowercase kebab-case names work because punctuation,
+whitespace, and case are normalized during matching:
 
 ```text
-icons/social/Discord.icns             → key "Discord"
-icons/work/Visual Studio Code.icns    → key "Visual Studio Code"
+app-icons/social/discord.icns             → key "discord"
+app-icons/personal/google-chrome.icns     → key "google-chrome"
+app-icons/work/google-chrome-dev.icns     → key "google-chrome-dev"
 ```
+
+With applications named `Google Chrome.app` and `Google Chrome Dev.app`, the last two stems resolve as separate exact
+matches, making different personal and work artwork possible. Stable Chrome also advertises the shorter bundle name
+`Chrome`, but do not keep both `chrome.icns` and `google-chrome.icns`: two keys would target the same app and stop bulk
+preflight. A shared partial key such as `google.icns` is ambiguous. If installed bundle names differ, use their exact
+names as the stems or apply directly with exact application paths.
 
 Every file is validated as ICNS before app mutation begins.
 
@@ -486,8 +565,12 @@ It never runs once per entry.
 Examples:
 
 ```bash
+# Use the configured default directory.
+iconforge apply --all --dry-run --verbose
+iconforge apply -a -v
+
+# Override the configured default for one invocation.
 iconforge apply --all ./icons --dry-run --verbose
-iconforge apply -a ./icons -v
 iconforge apply -a ./icons -n
 iconforge apply -a -- ./-icons
 ```
@@ -571,6 +654,7 @@ iconforge nuke "/Applications/Discord.app"
 
 - macOS.
 - Bash 3.2 or newer for the command layer.
+- Apple-provided `/usr/bin/plutil` and `/usr/bin/xmllint` for structured preference decoding.
 - Go new enough to satisfy the version declared in `iconforge-processor/go.mod` for source builds.
 - Xcode Command Line Tools for `xcrun clang` and macOS frameworks.
 
@@ -618,7 +702,8 @@ Installed layout:
 ```
 
 The launcher resolves the sibling runtime directory and executes the installed entry point. The runtime does not
-search the repository, current directory, home directory, or preference files for executable components.
+search the repository, current directory, home directory, or preference files for executable components. The user
+preference file contains data only and cannot replace any runtime component.
 
 Uninstall from the same prefix:
 
@@ -627,9 +712,9 @@ make uninstall
 sudo env PREFIX=/usr/local ./uninstall.sh
 ```
 
-Uninstall removes only `<prefix>/bin/iconforge` and `<prefix>/lib/iconforge`. It does not remove generated icons, modify
-apps, erase current-user icon caches, or edit shell startup files. It returns nonzero when neither installation path
-exists.
+Uninstall removes only `<prefix>/bin/iconforge` and `<prefix>/lib/iconforge`. It leaves generated icons and the user's
+`~/.config/iconforge/config.plist` in place, does not modify apps, erase current-user icon caches, or edit shell startup
+files, and returns nonzero when neither installation path exists.
 
 ### Homebrew
 

@@ -20,13 +20,14 @@ Forge PNG, JPEG, WebP, TIFF, and GIF artwork into complete `.icns` files. Inspec
 Finder custom icon without rewriting the app, or make an explicit expert-level internal replacement when you truly
 need one.
 
-IconForge is deliberately stateless: each command names its input, output, application, or icon directory. It never
-loads shell configuration or remembers a default directory.
+IconForge keeps execution explicit, with one opt-in convenience: it can remember a default icon directory for forge
+output and bulk apply. Command-line directories always win, and IconForge never sources shell configuration.
 
 ## ✦ What it does
 
 - Forge one image, several images, or an explicitly requested recursive tree.
 - Preserve relative paths, spaces, and Unicode names during recursive work.
+- Optionally use one configured directory for forge output and bulk application.
 - Inspect an app without changing it.
 - Apply one `.icns` file or match a directory of `.icns` files to installed apps.
 - Restore supported changes and reset current-user icon caches on request.
@@ -67,11 +68,23 @@ covered in the [installation reference](docs/USAGE.md#installation-and-runtime-l
 
 ## ▶ Quick start
 
-Forge artwork into the current directory:
+Forge artwork into the current directory when no default directory is configured:
 
 ```bash
 iconforge forge "$HOME/Desktop/discord.png"
 ```
+
+Or make one icon library the default destination and bulk source:
+
+```bash
+iconforge config set default-directory "$HOME/app-icons"
+iconforge forge "$HOME/Desktop/discord.png" discord
+iconforge apply --all --dry-run --verbose
+```
+
+The configured path is stored as an absolute path. An explicit `--output` or bulk directory overrides it for that
+invocation. Inspect the current value with `iconforge config get default-directory`, or remove it with
+`iconforge config unset default-directory`.
 
 Or choose a destination and keep the normalized PNG:
 
@@ -109,14 +122,15 @@ Use a disposable copied application for any first test of internal bundle mutati
 
 ## ⏾ Command map
 
-| Command             | Purpose                                                        |
-|---------------------|----------------------------------------------------------------|
-| `iconforge forge`   | Turn supported artwork into `.icns` files                      |
-| `iconforge inspect` | Explain how an application provides its icon                   |
-| `iconforge apply`   | Apply one icon or match an explicit icon directory             |
-| `iconforge restore` | Remove a Finder custom icon and restore one internal backup     |
+| Command             | Purpose                                                         |
+|---------------------|-----------------------------------------------------------------|
+| `iconforge config`  | Set, inspect, or unset the optional default icon directory      |
+| `iconforge forge`   | Turn supported artwork into `.icns` files                       |
+| `iconforge inspect` | Explain how an application provides its icon                    |
+| `iconforge apply`   | Apply one icon or match an icon directory                       |
+| `iconforge restore` | Remove a Finder custom icon and restore one internal backup      |
 | `iconforge nuke`    | Reset current-user icon caches, optionally after touching an app |
-| `iconforge help`    | Show the root overview or help for one command                  |
+| `iconforge help`    | Show the root overview or help for one command                   |
 
 Root `-v/--version` prints the version. Inside `apply`, `-v/--verbose` expands status output. The position is
 intentional.
@@ -125,6 +139,7 @@ Help is built in:
 
 ```bash
 iconforge --help
+iconforge help config
 iconforge help apply
 iconforge forge --help
 iconforge apply --help
@@ -158,32 +173,36 @@ copying, signing, or strict signature verification fails. Read
 
 ## ❖ Apply an icon directory
 
-Bulk mode is an explicit one-run operation. Point it at a directory containing `.icns` files anywhere below it:
+Bulk mode always requires `-a/--all`. Point it at a directory containing `.icns` files anywhere below it, or omit the
+directory after configuring a default:
 
 ```text
-icons/
-├── Discord.icns
-├── Music/
-│   └── Spotify.icns
-└── Work/
-    └── Visual Studio Code.icns
+app-icons/
+├── discord.icns
+├── google-chrome.icns
+├── google-chrome-dev.icns
+└── visual-studio-code.icns
 ```
 
 Preview exact matches:
 
 ```bash
-iconforge apply --all ./icons --dry-run --verbose
+iconforge apply --all --dry-run --verbose
 ```
 
 Apply them and run Nuke once afterward:
 
 ```bash
-iconforge apply --all ./icons --nuke --verbose
+iconforge apply --all --nuke --verbose
 ```
 
 The filename stem is the app key. Exact normalized matches are automatic. One unique partial match can be confirmed for
 that run; it is never saved. Unmatched or ambiguous entries are skipped and summarized. Duplicate keys, malformed
 icons, and two icons targeting one app fail preflight before anything is changed.
+
+When Google Chrome and Google Chrome Dev are both installed, name their icon files `google-chrome.icns` and
+`google-chrome-dev.icns`. Those stems normalize to the two full application names. Avoid keeping another alias such as
+`chrome.icns` beside `google-chrome.icns`: two keys targeting Stable Chrome make bulk preflight stop before mutation.
 
 ## ☾ Before changing an app
 
@@ -227,6 +246,7 @@ See [RELEASING.md](RELEASING.md) for the verification and source/Homebrew public
 
 - [Complete command reference](docs/USAGE.md)
 - [Changelog](CHANGELOG.md)
+- [2.1.0 release notes](docs/releases/v2.1.0.md)
 - [2.0.0 release notes](docs/releases/v2.0.0.md)
 - [Release procedure](RELEASING.md)
 - [Third-party notices](THIRD_PARTY_NOTICES.md)

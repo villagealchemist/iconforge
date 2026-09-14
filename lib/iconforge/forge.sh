@@ -16,7 +16,7 @@ Arguments:
   <directory>       Directory to scan with -r/--recursive
 
 Options:
-  -o, --output <dir>  Write outputs to <dir>; default: current directory
+  -o, --output <dir>  Write outputs to <dir>; overrides the configured default
   -k, --keep-png      Keep the normalized PNG beside each generated .icns
   -r, --recursive     Recursively forge one directory while preserving its tree
   -f, --force         Replace pre-existing regular output files without prompting
@@ -27,6 +27,7 @@ Supported input formats:
   png, jpg, jpeg, webp, tiff, tif, gif
 
 Examples:
+  iconforge config set default-directory "$HOME/app-icons"
   iconforge forge ./messages.png google-messages -o ./icons
   iconforge forge ./photos --recursive --output ./icons
   iconforge ./logo.png BrandMark -o ./dist --keep-png
@@ -777,7 +778,7 @@ forge_print_dry_run() {
 }
 
 cmd_forge() {
-  local output_dir="$PWD"
+  local output_dir=""
   local output_root
   local keep_png=false
   local recursive=false
@@ -818,6 +819,14 @@ cmd_forge() {
   done
 
   forge_validate_operand_shape "$recursive" ${operands[@]+"${operands[@]}"} || return $?
+  if [[ -z "$output_dir" ]]; then
+    load_iconforge_config || return 1
+    if [[ "$ICONFORGE_HAS_DEFAULT_DIRECTORY" == true ]]; then
+      output_dir="$ICONFORGE_DEFAULT_DIRECTORY"
+    else
+      output_dir="$PWD"
+    fi
+  fi
   output_root="$(forge_canonical_destination "$output_dir")" || {
     fail "Could not resolve output directory: $output_dir" || return 1
   }

@@ -13,6 +13,8 @@ ICONFORGE_ROOT="$SCRIPT_DIR"
 
 # shellcheck source=lib/iconforge/common.sh
 source "$SCRIPT_DIR/lib/iconforge/common.sh"
+# shellcheck source=lib/iconforge/config.sh
+source "$SCRIPT_DIR/lib/iconforge/config.sh"
 # shellcheck source=lib/iconforge/forge.sh
 source "$SCRIPT_DIR/lib/iconforge/forge.sh"
 # shellcheck source=lib/iconforge/library.sh
@@ -40,6 +42,7 @@ Usage:
 
 Commands:
   forge      Convert an image, image list, or directory into macOS .icns files
+  config     Set, get, or unset the default icon directory
   inspect    Explain how an application bundle provides its icon
   apply      Apply one icon directly or apply a directory of icons in bulk
   restore    Restore an internal backup and/or remove a Finder custom icon
@@ -48,6 +51,7 @@ Commands:
 
 Command help:
   iconforge forge --help
+  iconforge config --help
   iconforge inspect --help
   iconforge apply --help
   iconforge restore --help
@@ -62,10 +66,11 @@ Global options:
   -v, --version    Show the Icon Forge version
 
 Quick start:
-  iconforge forge ./messages.png google-messages -o ./icons
+  iconforge config set default-directory "\$HOME/app-icons"
+  iconforge forge ./messages.png google-messages
   iconforge inspect "/Applications/Google Messages.app"
-  iconforge apply "/Applications/Google Messages.app" -i ./icons/google-messages.icns
-  iconforge apply -a ./icons
+  iconforge apply "/Applications/Google Messages.app" -i "\$HOME/app-icons/google-messages.icns"
+  iconforge apply -a -d -v
 
 Full reference:
   https://github.com/villagealchemist/iconforge/blob/main/docs/USAGE.md
@@ -122,7 +127,7 @@ cmd_help() {
   fi
 
   case "$topic" in
-    forge|inspect|apply|restore|nuke)
+    forge|config|inspect|apply|restore|nuke)
       dispatch_subcommand "$topic" --help
       ;;
     help)
@@ -144,6 +149,9 @@ dispatch_subcommand() {
       ;;
     forge)
       cmd_forge "$@"
+      ;;
+    config)
+      cmd_config "$@"
       ;;
     inspect)
       cmd_inspect "$@"
@@ -192,7 +200,7 @@ main() {
       ;;
     *)
       case "$1" in
-        forge|inspect|apply|restore|nuke|help)
+        forge|config|inspect|apply|restore|nuke|help)
           dispatch_subcommand "$@"
           ;;
         *)
