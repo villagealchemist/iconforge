@@ -45,6 +45,10 @@ test_info() {
 # Generate a consistent, lowercase, underscore-safe temp dir name
 TEST_DIR="tests/tmp_$(echo "$TEST_NAME" | tr '[:upper:] ' '[:lower:]_')"
 
+# The newly supported system root must not leak real applications into existing
+# fixtures. A test may explicitly override this with its own CoreServices tree.
+export ICONFORGE_TEST_CORE_SERVICES_DIR="${ICONFORGE_TEST_CORE_SERVICES_DIR:-$PWD/$TEST_DIR/isolated-core-services}"
+
 cleanup() {
   if [[ -d "$TEST_DIR" ]]; then
     chmod -R u+w "$TEST_DIR" 2>/dev/null || true
