@@ -47,7 +47,10 @@ cli_forge() {
   local -a args=()
   cli_normalize_options forge "$@" || return $?
   args=("${CLI_ARGS[@]+"${CLI_ARGS[@]}"}")
-  [[ "${#args[@]}" -gt 0 ]] || { cli_forge_help; return 2; }
+  [[ "${#args[@]}" -gt 0 ]] || {
+    cli_forge_help
+    usage_fail "forge requires an input image or directory" || return 2
+  }
   # The engine still validates all forge grammar, duplicates, and collisions.
   for token in "${args[@]+"${args[@]}"}"; do
     [[ "$options_done" != true ]] || continue
@@ -243,7 +246,7 @@ cli_target_command() {
           [[ -d "$root" && "$root" != / && "$root" != *$'\n'* && "$root" != *$'\t'* ]] || { usage_fail 'Invalid --app-root'; return 2; }
           ICONFORGE_EXTRA_APPLICATION_ROOTS+=("$root"); shift 2; continue ;;
         --refresh)
-          [[ "$command" == restore ]] || { usage_fail 'inspect does not refresh caches'; return 2; }
+          [[ "$command" == restore ]] || { usage_fail "$command does not accept --refresh"; return 2; }
           args+=(--nuke); shift; continue ;;
       esac
     fi
