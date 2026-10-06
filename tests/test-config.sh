@@ -37,7 +37,10 @@ HOME="$FAKE_HOME" ICONFORGE_ROOT="$BASE/runtime" ICONFORGE_ICON_ROOT=/poison \
   ICONFORGE_ICON_ROOT=/poison CUSTOM_OUTPUT=/poison KEEP_PNG=true RECURSIVE=true SUPPRESS_WARNINGS=true \
     "$BIN" "$BASE/../i-just-wanna-be-an-icon.png" --dry-run > "$OUTPUT"
 )
-! grep -F /poison "$OUTPUT"
+if grep -F /poison "$OUTPUT"; then
+  test_fail 'Forge inherited obsolete preferences'
+  exit 1
+fi
 contains "$WORK/i-just-wanna-be-an-icon.icns"
 assert_status 2 "$BIN" apply --all
 contains 'the-hearth'

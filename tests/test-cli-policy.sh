@@ -101,10 +101,10 @@ forge_end_marker() { cli_forge -- ./-art.png; assert_eq "${CALL_ARGS[0]}" --outp
 normalization_literal() { cli_normalize_options forge -- '--output=literal'; assert_eq "${CLI_ARGS[1]}" '--output=literal'; }
 empty_option() { expect_error 2 cli_apply Firefox --from=; }
 boolean_equals() { expect_error 2 cli_apply Firefox --dry-run=true; }
-quoted_path() { cli_apply Firefox --from '/a folder/$(not-a-command)'; assert_arg '/a folder/$(not-a-command)/Firefox.icns'; }
-additional_roots() { cli_apply Firefox --app-root /tmp; assert_eq "${CAPTURED_ROOTS[0]}" /tmp; [[ "${ICONFORGE_EXTRA_APPLICATION_ROOTS+x}" != x ]]; }
+quoted_path() { cli_apply Firefox --from "/a folder/\$(not-a-command)"; assert_arg "/a folder/\$(not-a-command)/Firefox.icns"; }
+additional_roots() { cli_apply Firefox --app-root /tmp; assert_eq "${CAPTURED_ROOTS[0]}" "$(cd -P /tmp && pwd)"; [[ "${ICONFORGE_EXTRA_APPLICATION_ROOTS+x}" != x ]]; }
 invalid_root() { expect_error 2 cli_apply Firefox --app-root /; }
-read_only_routing() { cli_target_command inspect Firefox --app-root=/tmp; assert_eq "$CALL_KIND" inspect; assert_arg Firefox; assert_eq "${CAPTURED_ROOTS[0]}" /tmp; }
+read_only_routing() { cli_target_command inspect Firefox --app-root=/tmp; assert_eq "$CALL_KIND" inspect; assert_arg Firefox; assert_eq "${CAPTURED_ROOTS[0]}" "$(cd -P /tmp && pwd)"; }
 help_no_config() { CONFIG_FAIL=true; cli_apply --help >/dev/null; cli_forge --help >/dev/null; assert_eq "$CONFIG_READS" 0; assert_eq "$CALLS" 0; }
 
 for name in lookup shorthand flag_refresh explicit_bypass from_bypass malformed_implicit missing_config missing_icon duplicate_icon alias_collision unrelated_duplicates unresolved_app bulk bulk_explicit bulk_from bulk_nuke_directory no_implicit_bulk conflicting_sources conflicting_bulk unsafe_bulk_strategy invalid_strategy option_duplicates end_of_options app_named_nuke no_invented_chains preview forge_default forge_override forge_end_marker normalization_literal empty_option boolean_equals quoted_path additional_roots invalid_root read_only_routing help_no_config; do case_run "$name"; done
