@@ -1,6 +1,6 @@
 # IconForge command reference
 
-The public command contract for the forge/hearth overhaul is in [CLI.md](CLI.md).
+The public command contract for IconForge 2.2.0 is in [CLI.md](CLI.md).
 Start there for preferences, automatic application/icon lookup, explicit overrides,
 refresh aliases, diagnostics, completion, and examples.
 

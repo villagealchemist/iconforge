@@ -21,8 +21,11 @@ assert_not_contains '-V, --version'
 "$BIN" help -- apply > "$OUTPUT"
 for text in '-i, --icon' '-a, --all' '-s, --strategy' '-n, --nuke' '-d, --dry-run' '-v, --verbose' '--from' 'the-hearth'; do assert_contains "$text"; done
 for removed in --icon-root --refresh-caches --force-asset --no-resign; do assert_not_contains "$removed"; done
+"$BIN" inspect --help > "$OUTPUT"
+assert_contains '/System/Library/CoreServices'
 "$BIN" restore --help > "$OUTPUT"
 assert_contains '-n, --nuke'
+assert_contains '--refresh'
 assert_contains '-d, --dry-run'
 "$BIN" config --help > "$OUTPUT"
 for text in 'config set the-forge' 'config set the-hearth' 'config get' 'config unset' 'default-directory'; do assert_contains "$text"; done

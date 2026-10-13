@@ -57,9 +57,9 @@ _iconforge() {
   commands=(forge config inspect apply restore refresh nuke doctor capabilities completion help)
   if (( CURRENT == 2 )); then
     compadd -- $commands
-  elif [[ ${words[2]} == config && CURRENT == 3 ]]; then
+  elif [[ ${words[2]} == config && $CURRENT == 3 ]]; then
     compadd set get unset show path
-  elif [[ ${words[2]} == config && CURRENT == 4 && ${words[3]} != show && ${words[3]} != path ]]; then
+  elif [[ ${words[2]} == config && $CURRENT == 4 && ${words[3]} != show && ${words[3]} != path ]]; then
     compadd the-forge the-hearth default-directory
   elif [[ ${words[2]} == completion ]]; then
     compadd bash zsh fish

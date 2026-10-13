@@ -51,6 +51,12 @@ Confirm the public surface directly:
 ./iconforge.sh apply --help
 ./iconforge.sh restore --help
 ./iconforge.sh nuke --help
+./iconforge.sh refresh --help
+./iconforge.sh doctor --help
+./iconforge.sh capabilities
+./iconforge.sh completion bash
+./iconforge.sh completion zsh
+./iconforge.sh completion fish
 ```
 
 Exercise source installation in an isolated prefix:
@@ -106,6 +112,11 @@ The release commit must pass the full workflow on both pinned runners:
 Require lint, tests, cross-compilation, formula-contract validation, and the final clean-tree check on both jobs. The
 runner matrix does not establish a minimum supported macOS version.
 
+When releasing through a pull request, include the version, changelog, release notes, current documentation, and formula
+test updates in its final head. Require all final-head checks to pass before merging without an administrative bypass.
+After merging, require the same workflow on the actual merge commit before tagging it. If the PR head or base changes,
+recheck the affected gates. Never reuse a previous head's successful checks as evidence for a new release commit.
+
 ## Source commit and archive
 
 After the reviewed source commit and annotated tag exist publicly, resolve and verify them:
@@ -118,7 +129,7 @@ test "$source_commit" = "$(git rev-parse HEAD)"
 git tag -v "v$version" 2>/dev/null || git show "v$version" --no-patch
 ```
 
-Download the exact commit archive—not the tag archive—and calculate its checksum:
+Download the exact commit archive and calculate its checksum. Use the commit URL rather than the tag URL:
 
 ```bash
 archive="iconforge-$source_commit.tar.gz"
@@ -153,6 +164,8 @@ Review that the formula:
 - Builds the Objective-C/AppKit helper with AppKit and Foundation.
 - Installs the Bash libraries, entry point, version, notices, processor, and helper under the expected runtime layout.
 - Runs public version and forge operations.
+- Verifies legacy default-directory fallback, independent forge/hearth settings, and the installed diagnostic and
+  completion commands with isolated preferences.
 - Unpacks the forged ICNS and requires all ten representation filenames.
 
 Validate through Homebrew:

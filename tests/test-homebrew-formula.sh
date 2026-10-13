@@ -98,6 +98,44 @@ grep -Fxq '    system bin/"iconforge", "forge", testpath/"test.png"' "$FORMULA" 
   exit 1
 }
 
+for config_key in the-forge the-hearth; do
+  grep -Fq "system bin/\"iconforge\", \"config\", \"set\", \"$config_key\"" "$FORMULA" || {
+    test_fail "Formula test does not configure the installed $config_key"
+    exit 1
+  }
+  grep -Fq "shell_output(\"#{bin}/iconforge config get $config_key\").strip" "$FORMULA" || {
+    test_fail "Formula test does not read back the installed $config_key"
+    exit 1
+  }
+done
+
+grep -Fq 'refute_path_exists hearth/"HearthTest.icns"' "$FORMULA" || {
+  test_fail "Formula test does not verify independent forge and hearth destinations"
+  exit 1
+}
+
+grep -Fq 'shell_output("#{bin}/iconforge apply #{app} --dry-run")' "$FORMULA" || {
+  test_fail "Formula test does not resolve a hearth icon for a disposable app"
+  exit 1
+}
+
+for public_command in 'config path' 'config show' capabilities doctor 'completion bash'; do
+  grep -Fq "shell_output(\"#{bin}/iconforge $public_command\")" "$FORMULA" || {
+    test_fail "Formula test does not exercise installed command: $public_command"
+    exit 1
+  }
+done
+
+grep -Fq 'system bin/"iconforge", "config", "unset", "the-forge"' "$FORMULA" || {
+  test_fail "Formula test does not exercise removal of an independent preference"
+  exit 1
+}
+
+grep -Fq 'assert_match "source: default-directory (legacy)"' "$FORMULA" || {
+  test_fail "Formula test does not verify the legacy fallback after removing the-forge"
+  exit 1
+}
+
 grep -Fq 'assert_path_exists icns' "$FORMULA" || {
   test_fail "Formula test does not assert the forged ICNS output"
   exit 1

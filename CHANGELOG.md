@@ -2,6 +2,29 @@
 
 All notable user-facing changes to IconForge are recorded here.
 
+## 2.2.0
+
+### Configuration and application lookup
+
+- Added independent `the-forge` output and `the-hearth` ICNS-library preferences. Existing `default-directory`
+  settings remain a fallback, and explicit command-line paths take precedence.
+- Added `config show` for effective directories and their sources, and `config path` for the preference-file location.
+  Updates preserve unrelated keys, use atomic replacement and an exclusive lock, and reject malformed preferences.
+- Added direct application-by-name icon lookup from the hearth, with explicit `--icon` and `--from` overrides.
+  Ambiguous applications or matching icons require an explicit selection rather than choosing by scan order.
+- Added repeatable `--app-root` search locations and included macOS CoreServices in the default discovery roots.
+
+### Command line and documentation
+
+- Added long value options in `--name=value` form, `apply <app> nuke`, the `refresh` command alias, and
+  `--refresh` aliases on apply and restore. Bulk operations still require `--all`.
+- Added read-only `doctor` and `capabilities` commands and generated Bash, Zsh, and Fish completion scripts.
+  Verified Zsh configuration action/key completion and aligned discovery and refresh help with the new commands.
+- Introduced a built-in macOS backend boundary while retaining the existing image processor, native helper,
+  transactional operations, and explicit-only `internal-icns` strategy.
+- Published the forge/hearth CLI guide and architecture notes, retaining the v2.1.0 execution-engine reference.
+- Extended Homebrew verification for independent preferences and the installed 2.2.0 command surface.
+
 ## 2.1.0
 
 ### Configuration
