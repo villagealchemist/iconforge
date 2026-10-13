@@ -50,6 +50,45 @@ class Iconforge < Formula
     system bin/"iconforge", "forge", testpath/"test.png"
     assert_path_exists default_output/"test.icns"
 
+    forge_output = testpath/"the-forge"
+    hearth = testpath/"the-hearth"
+    system bin/"iconforge", "config", "set", "the-forge", forge_output
+    system bin/"iconforge", "config", "set", "the-hearth", hearth
+    assert_equal forge_output.to_s, shell_output("#{bin}/iconforge config get the-forge").strip
+    assert_equal hearth.to_s, shell_output("#{bin}/iconforge config get the-hearth").strip
+    assert_equal default_output.to_s,
+                 shell_output("#{bin}/iconforge config get default-directory").strip
+    assert_equal (testpath/"config/iconforge/config.plist").to_s,
+                 shell_output("#{bin}/iconforge config path").strip
+    configuration = shell_output("#{bin}/iconforge config show")
+    assert_match "source: the-forge", configuration
+    assert_match "source: the-hearth", configuration
+    system bin/"iconforge", "forge", testpath/"test.png", "HearthTest"
+    assert_path_exists forge_output/"HearthTest.icns"
+    refute_path_exists default_output/"HearthTest.icns"
+    refute_path_exists hearth/"HearthTest.icns"
+
+    hearth.mkpath
+    cp forge_output/"HearthTest.icns", hearth/"HearthTest.icns"
+    app = testpath/"HearthTest.app"
+    (app/"Contents/Resources").mkpath
+    (app/"Contents/Info.plist").write <<~PLIST
+      <?xml version="1.0" encoding="UTF-8"?>
+      <plist version="1.0"><dict>
+        <key>CFBundleIdentifier</key><string>org.iconforge.test.HearthTest</string>
+        <key>CFBundleName</key><string>HearthTest</string>
+      </dict></plist>
+    PLIST
+    assert_match (hearth/"HearthTest.icns").to_s,
+                 shell_output("#{bin}/iconforge apply #{app} --dry-run")
+    assert_match "Backend: macos", shell_output("#{bin}/iconforge capabilities")
+    assert_match processor.to_s, shell_output("#{bin}/iconforge doctor")
+    assert_match "_iconforge_complete", shell_output("#{bin}/iconforge completion bash")
+
+    system bin/"iconforge", "config", "unset", "the-forge"
+    assert_equal hearth.to_s, shell_output("#{bin}/iconforge config get the-hearth").strip
+    assert_match "source: default-directory (legacy)", shell_output("#{bin}/iconforge config show")
+
     system bin/"iconforge", "forge", testpath/"test.png",
            "--output", testpath/"output"
     icns = testpath/"output/test.icns"

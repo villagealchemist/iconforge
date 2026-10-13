@@ -11,7 +11,8 @@ Options:
   -h, --help  Show this help
 
 Names are resolved from the current directory, ~/Applications, /Applications,
-and /System/Applications. Use -- before an app name beginning with a dash.
+/System/Applications, and /System/Library/CoreServices.
+Use -- before an app name beginning with a dash.
 EOF
 }
 
@@ -48,6 +49,7 @@ Usage:
 
 Options:
   -n, --nuke     Run Nuke once after a successful restore
+      --refresh  Alias for --nuke
   -d, --dry-run  Validate and show work without changing anything
   -h, --help     Show this help
 EOF

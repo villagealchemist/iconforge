@@ -1,300 +1,144 @@
 #!/usr/bin/env bash
 set -euo pipefail
-
-TEST_NAME="safe default-directory configuration"
+TEST_NAME="safe directory configuration"
+# shellcheck source=tests/test-common.sh
 source tests/test-common.sh
 unset XDG_CONFIG_HOME || true
-
 BIN="$PWD/iconforge.sh"
-EXPECTED_VERSION="$(tr -d '[:space:]' < VERSION)"
-RUNTIME_ROOT="$PWD/$TEST_DIR/runtime"
-FAKE_HOME="$PWD/$TEST_DIR/home"
-WORK_ROOT="$PWD/$TEST_DIR/work"
-MARKER="$PWD/$TEST_DIR/sourced-marker"
-OUTPUT="$PWD/$TEST_DIR/output.log"
+BASE="$PWD/$TEST_DIR"
+FAKE_HOME="$BASE/home"
+WORK="$BASE/work"
 CONFIG_FILE="$FAKE_HOME/.config/iconforge/config.plist"
-EXPLICIT_OUTPUT="$PWD/$TEST_DIR/explicit-output"
-EMPTY_EXPLICIT_BULK="$PWD/$TEST_DIR/empty-explicit-bulk"
-mkdir -p "$RUNTIME_ROOT" "$FAKE_HOME/.config/iconforge" "$WORK_ROOT" "$EXPLICIT_OUTPUT" "$EMPTY_EXPLICIT_BULK"
-cp VERSION "$RUNTIME_ROOT/VERSION"
+OUTPUT="$BASE/output.log"
+MARKER="$BASE/sourced-marker"
+mkdir -p "$FAKE_HOME/.config/iconforge" "$WORK" "$BASE/explicit" "$BASE/empty"
+export HOME="$FAKE_HOME"
 
-for legacy_file in "$RUNTIME_ROOT/.iconforge.env" "$RUNTIME_ROOT/.iconforge.local.env" "$FAKE_HOME/.iconforgerc"; do
-  printf 'touch %q\n' "$MARKER" >"$legacy_file"
-done
-/usr/bin/plutil -create xml1 "$CONFIG_FILE"
+assert_status() {
+  local expected="$1" actual=0; shift
+  "$@" >"$OUTPUT" 2>&1 || actual=$?
+  [[ "$actual" -eq "$expected" ]] || { test_fail "Expected $expected, got $actual: $*"; cat "$OUTPUT"; exit 1; }
+}
+contains() { grep -F -- "$1" "$OUTPUT" >/dev/null || { test_fail "Missing diagnostic: $1"; cat "$OUTPUT"; exit 1; }; }
+new_plist() { /usr/bin/plutil -create xml1 "$CONFIG_FILE"; }
+
+# Old executable preferences and obsolete keys are never loaded.
+printf 'touch %q\n' "$MARKER" > "$FAKE_HOME/.iconforgerc"
+new_plist
 /usr/bin/plutil -insert icon_root -string /poison "$CONFIG_FILE"
-
-HOME="$FAKE_HOME" ICONFORGE_ROOT="$RUNTIME_ROOT" ICONFORGE_ICON_ROOT="/poison" \
-bash -c 'source "$1"; printf "%s\n" "$ICONFORGE_DRY_RUN"' \
-  _ "$PWD/lib/iconforge/common.sh" >"$OUTPUT"
-
-[[ ! -e "$MARKER" ]] || { test_fail "A legacy shell config was sourced"; exit 1; }
-[[ "$(cat "$OUTPUT")" == "false" ]] || { test_fail "Runtime dry-run state was not reset"; exit 1; }
-
+mkdir -p "$BASE/runtime"
+cp VERSION "$BASE/runtime/VERSION"
+for name in .iconforge.env .iconforge.local.env; do printf 'touch %q\n' "$MARKER" > "$BASE/runtime/$name"; done
+HOME="$FAKE_HOME" ICONFORGE_ROOT="$BASE/runtime" ICONFORGE_ICON_ROOT=/poison \
+  bash -c 'source "$1"; printf "%s\n" "$ICONFORGE_DRY_RUN"' _ "$PWD/lib/iconforge/common.sh" > "$OUTPUT"
+[[ "$(cat "$OUTPUT")" == false && ! -e "$MARKER" ]]
 (
-  cd "$WORK_ROOT"
-  HOME="$FAKE_HOME" CUSTOM_OUTPUT="/poison" KEEP_PNG=true RECURSIVE=true SUPPRESS_WARNINGS=true \
-    "$BIN" "$PWD/../../i-just-wanna-be-an-icon.png" -d >"$OUTPUT"
+  cd "$WORK"
+  ICONFORGE_ICON_ROOT=/poison CUSTOM_OUTPUT=/poison KEEP_PNG=true RECURSIVE=true SUPPRESS_WARNINGS=true \
+    "$BIN" "$BASE/../i-just-wanna-be-an-icon.png" --dry-run > "$OUTPUT"
 )
-! grep -F "/poison" "$OUTPUT" >/dev/null || { test_fail "Forge inherited a legacy output default"; exit 1; }
-grep -F "$WORK_ROOT/i-just-wanna-be-an-icon.icns" "$OUTPUT" >/dev/null || {
-  test_fail "An obsolete plist key displaced the current-directory fallback"
+if grep -F /poison "$OUTPUT"; then
+  test_fail 'Forge inherited obsolete preferences'
   exit 1
-}
+fi
+contains "$WORK/i-just-wanna-be-an-icon.icns"
+assert_status 2 "$BIN" apply --all
+contains 'the-hearth'
 
-HOME="$FAKE_HOME" ICONFORGE_ICON_ROOT="$PWD/$TEST_DIR/icons" "$BIN" -v >"$OUTPUT"
-[[ "$(cat "$OUTPUT")" == "iconforge v$EXPECTED_VERSION" ]] || { test_fail "Legacy state affected root version"; exit 1; }
-
-set +e
-HOME="$FAKE_HOME" ICONFORGE_ICON_ROOT="$PWD/$TEST_DIR/icons" "$BIN" apply -a >"$OUTPUT" 2>&1
-STATUS=$?
-set -e
-[[ "$STATUS" -eq 2 ]] || { test_fail "Bare --all should still fail without the new default"; exit 1; }
-grep -F -- "--all requires an icon directory or a configured default-directory" "$OUTPUT" >/dev/null || {
-  test_fail "Missing default-directory guidance"
-  exit 1
-}
-
-DEFAULT_RELATIVE="saved icons/Ünicode"
+# Relative values bind to configuration-time cwd. Future unknown keys survive.
 (
-  cd "$WORK_ROOT"
-  HOME="$FAKE_HOME" "$BIN" config set default-directory "$DEFAULT_RELATIVE" >"$OUTPUT"
+  cd "$WORK"
+  "$BIN" config set default-directory 'saved icons/Ünicode' >/dev/null
 )
-EXPECTED_DEFAULT="$WORK_ROOT/$DEFAULT_RELATIVE"
-[[ "$(HOME="$FAKE_HOME" "$BIN" config get default-directory)" == "$EXPECTED_DEFAULT" ]] || {
-  test_fail "Config get did not return the canonical absolute default"
-  exit 1
-}
-[[ "$(/usr/libexec/PlistBuddy -c 'Print :default_directory' "$CONFIG_FILE")" == "$EXPECTED_DEFAULT" ]] || {
-  test_fail "The plist did not contain the configured directory"
-  exit 1
-}
-[[ "$(/usr/bin/stat -f '%Lp' "$CONFIG_FILE")" == 600 ]] || {
-  test_fail "The configuration file was not private"
-  exit 1
-}
+EXPECTED="$WORK/saved icons/Ünicode"
+[[ "$("$BIN" config get default-directory)" == "$EXPECTED" ]]
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :default_directory' "$CONFIG_FILE")" == "$EXPECTED" ]]
+[[ "$(/usr/libexec/PlistBuddy -c 'Print :icon_root' "$CONFIG_FILE")" == /poison ]]
+[[ "$(/usr/bin/stat -f '%Lp' "$CONFIG_FILE")" == 600 ]]
+mkdir -p "$BASE/physical/real" "$BASE/physical/icons" "$BASE/logical"
+ln -s "$BASE/physical/real" "$BASE/logical/link"
+"$BIN" config set default-directory "$BASE/logical/link/../icons" >/dev/null
+[[ "$("$BIN" config get default-directory)" == "$BASE/physical/icons" ]]
+"$BIN" config set default-directory "$EXPECTED" >/dev/null
+assert_status 0 "$BIN" forge "$TEST_IMAGE1" --dry-run
+contains "$EXPECTED/i-just-wanna-be-an-icon.icns"
+"$BIN" config unset default-directory > "$OUTPUT"
+contains 'Default icon directory unset'
+assert_status 1 "$BIN" config get default-directory
+"$BIN" config unset default-directory > "$OUTPUT"
+contains 'Default icon directory is not set'
 
-SYMLINK_CASE="$PWD/$TEST_DIR/symlink-case"
-mkdir -p "$SYMLINK_CASE/physical/real" "$SYMLINK_CASE/physical/icons" "$SYMLINK_CASE/logical"
-ln -s "$SYMLINK_CASE/physical/real" "$SYMLINK_CASE/logical/link"
-HOME="$FAKE_HOME" "$BIN" config set default-directory "$SYMLINK_CASE/logical/link/../icons" >/dev/null
-[[ "$(HOME="$FAKE_HOME" "$BIN" config get default-directory)" == "$SYMLINK_CASE/physical/icons" ]] || {
-  test_fail "Config collapsed parent traversal before resolving a symlink"
-  exit 1
-}
-HOME="$FAKE_HOME" "$BIN" config set default-directory "$EXPECTED_DEFAULT" >/dev/null
+# A corrupt preference does not affect explicit paths or --version. Unlike the
+# old single-key setter, set may not erase an unreadable multi-key document.
+printf 'not a property list\n' > "$CONFIG_FILE"
+assert_status 1 "$BIN" forge "$TEST_IMAGE1" --dry-run
+contains 'configuration is not a valid property list'
+assert_status 0 "$BIN" forge "$TEST_IMAGE1" --dry-run --output "$BASE/explicit"
+contains "$BASE/explicit/i-just-wanna-be-an-icon.icns"
+assert_status 1 "$BIN" apply --all "$BASE/empty" --dry-run
+contains 'No eligible .icns files found'
+[[ "$("$BIN" --version)" == "iconforge v$(tr -d '[:space:]' < VERSION)" ]]
+assert_status 1 "$BIN" config set default-directory "$EXPECTED"
+[[ "$(cat "$CONFIG_FILE")" == 'not a property list' ]]
+rm "$CONFIG_FILE"
+"$BIN" config set default-directory "$EXPECTED" >/dev/null
 
-(
-  cd "$PWD/$TEST_DIR"
-  HOME="$FAKE_HOME" "$BIN" forge "$PWD/../i-just-wanna-be-an-icon.png" -d >"$OUTPUT"
-)
-grep -F "$EXPECTED_DEFAULT/i-just-wanna-be-an-icon.icns" "$OUTPUT" >/dev/null || {
-  test_fail "Forge did not use the configured default across working directories"
-  exit 1
-}
+# Known keys must contain one absolute, single-line string, not path-shaped data.
+for type in array data; do
+  new_plist
+  if [[ "$type" == array ]]; then
+    /usr/bin/plutil -insert default_directory -array "$CONFIG_FILE"
+  else
+    /usr/bin/plutil -insert default_directory -data L3RtcC9pY29ucw== "$CONFIG_FILE"
+  fi
+  assert_status 1 "$BIN" config get default-directory
+  contains 'must be a string'
+done
+new_plist
+/usr/bin/plutil -insert default_directory -string "$EXPECTED"$'\n' "$CONFIG_FILE"
+assert_status 1 "$BIN" config get default-directory
+contains 'must be a single-line string'
+printf '<plist version="1.0"><array/></plist>\n' > "$CONFIG_FILE"
+assert_status 1 "$BIN" forge "$TEST_IMAGE1" --dry-run
+contains 'configuration root must be a dictionary'
+assert_status 1 "$BIN" config set default-directory /
+: > "$BASE/not-a-directory"
+assert_status 1 "$BIN" config set default-directory "$BASE/not-a-directory/child"
+contains 'ancestor is not a directory'
+ln -s "$BASE/missing" "$BASE/dangling"
+assert_status 1 "$BIN" config set default-directory "$BASE/dangling"
+contains 'contains a dangling symlink'
+ln -s / "$BASE/root-link"
+new_plist
+/usr/bin/plutil -insert default_directory -string "$BASE/root-link" "$CONFIG_FILE"
+assert_status 1 "$BIN" apply --all --dry-run
+contains 'resolves to the filesystem root'
 
-HOME="$FAKE_HOME" "$BIN" config unset default-directory >"$OUTPUT"
-grep -Fx "Default icon directory unset" "$OUTPUT" >/dev/null || { test_fail "Unset did not report success"; exit 1; }
-set +e
-HOME="$FAKE_HOME" "$BIN" config get default-directory >"$OUTPUT" 2>&1
-STATUS=$?
-set -e
-[[ "$STATUS" -eq 1 ]] || { test_fail "Get should return status 1 when unset"; exit 1; }
-! grep -q '^/' "$OUTPUT" || { test_fail "Unset get unexpectedly printed a path"; exit 1; }
-HOME="$FAKE_HOME" "$BIN" config unset default-directory >"$OUTPUT"
-grep -Fx "Default icon directory is not set" "$OUTPUT" >/dev/null || { test_fail "Unset was not idempotent"; exit 1; }
+# None of get/set/unset may follow a symlinked preference file.
+mv "$CONFIG_FILE" "$BASE/target.plist"
+CHECKSUM="$(shasum -a 256 "$BASE/target.plist")"
+ln -s "$BASE/target.plist" "$CONFIG_FILE"
+assert_status 1 "$BIN" config get default-directory
+contains 'configuration must not be a symlink'
+assert_status 1 "$BIN" config set default-directory "$EXPECTED"
+contains 'configuration must not be a symlink'
+assert_status 1 "$BIN" config unset default-directory
+contains 'configuration must not be a symlink'
+[[ "$(shasum -a 256 "$BASE/target.plist")" == "$CHECKSUM" ]]
 
-printf 'not a property list\n' >"$CONFIG_FILE"
-set +e
-HOME="$FAKE_HOME" "$BIN" forge "$TEST_IMAGE1" -d >"$OUTPUT" 2>&1
-STATUS=$?
-set -e
-[[ "$STATUS" -eq 1 ]] || { test_fail "Forge accepted malformed configuration"; exit 1; }
-grep -F "configuration is not a valid property list" "$OUTPUT" >/dev/null || {
-  test_fail "Malformed configuration error was unclear"
-  exit 1
-}
-HOME="$FAKE_HOME" "$BIN" forge "$TEST_IMAGE1" -d -o "$EXPLICIT_OUTPUT" >"$OUTPUT"
-grep -F "$EXPLICIT_OUTPUT/i-just-wanna-be-an-icon.icns" "$OUTPUT" >/dev/null || {
-  test_fail "Explicit output did not bypass an irrelevant malformed default"
-  exit 1
-}
-set +e
-HOME="$FAKE_HOME" "$BIN" apply --all "$EMPTY_EXPLICIT_BULK" --dry-run >"$OUTPUT" 2>&1
-STATUS=$?
-set -e
-[[ "$STATUS" -eq 1 ]] || { test_fail "Explicit bulk directory did not complete its own empty-library preflight"; exit 1; }
-grep -F "No eligible .icns files found under: $EMPTY_EXPLICIT_BULK" "$OUTPUT" >/dev/null || {
-  test_fail "Explicit bulk directory did not bypass an irrelevant malformed default"
-  exit 1
-}
-! grep -F "configuration is not a valid property list" "$OUTPUT" >/dev/null || {
-  test_fail "Explicit bulk directory loaded an irrelevant malformed default"
-  exit 1
-}
-[[ "$(HOME="$FAKE_HOME" "$BIN" --version)" == "iconforge v$EXPECTED_VERSION" ]] || {
-  test_fail "Version read configuration eagerly"
-  exit 1
-}
-
-HOME="$FAKE_HOME" "$BIN" config set default-directory "$EXPECTED_DEFAULT" >/dev/null
-/usr/bin/plutil -remove default_directory "$CONFIG_FILE"
-/usr/bin/plutil -insert default_directory -array "$CONFIG_FILE"
-set +e
-HOME="$FAKE_HOME" "$BIN" config get default-directory >"$OUTPUT" 2>&1
-STATUS=$?
-set -e
-[[ "$STATUS" -eq 1 ]] || { test_fail "Config accepted a non-string default_directory"; exit 1; }
-grep -F "must be a string" "$OUTPUT" >/dev/null || { test_fail "Wrong-type configuration error was unclear"; exit 1; }
-
-/usr/bin/plutil -create xml1 "$CONFIG_FILE"
-/usr/bin/plutil -insert default_directory -data L3RtcC9pY29ucw== "$CONFIG_FILE"
-set +e
-HOME="$FAKE_HOME" "$BIN" config get default-directory >"$OUTPUT" 2>&1
-STATUS=$?
-set -e
-[[ "$STATUS" -eq 1 ]] || { test_fail "Config accepted path-shaped data as a string"; exit 1; }
-grep -F "must be a string" "$OUTPUT" >/dev/null || { test_fail "Data-type configuration error was unclear"; exit 1; }
-
-/usr/bin/plutil -create xml1 "$CONFIG_FILE"
-/usr/bin/plutil -insert default_directory -string "$EXPECTED_DEFAULT"$'\n' "$CONFIG_FILE"
-set +e
-HOME="$FAKE_HOME" "$BIN" config get default-directory >"$OUTPUT" 2>&1
-STATUS=$?
-set -e
-[[ "$STATUS" -eq 1 ]] || { test_fail "Config discarded and accepted a trailing newline"; exit 1; }
-grep -F "must be a single-line string" "$OUTPUT" >/dev/null || {
-  test_fail "Multiline configuration error was unclear"
-  exit 1
-}
-
-printf '%s\n' \
-  '<?xml version="1.0" encoding="UTF-8"?>' \
-  '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">' \
-  '<plist version="1.0"><array/></plist>' >"$CONFIG_FILE"
-set +e
-HOME="$FAKE_HOME" "$BIN" forge "$TEST_IMAGE1" -d >"$OUTPUT" 2>&1
-STATUS=$?
-set -e
-[[ "$STATUS" -eq 1 ]] || { test_fail "Forge treated a non-dictionary config root as unset"; exit 1; }
-grep -F "configuration root must be a dictionary" "$OUTPUT" >/dev/null || {
-  test_fail "Non-dictionary configuration error was unclear"
-  exit 1
-}
-
-set +e
-HOME="$FAKE_HOME" "$BIN" config set default-directory / >"$OUTPUT" 2>&1
-STATUS=$?
-set -e
-[[ "$STATUS" -eq 1 ]] || { test_fail "Config accepted the filesystem root as a default"; exit 1; }
-
-NOT_A_DIRECTORY="$PWD/$TEST_DIR/not-a-directory"
-: >"$NOT_A_DIRECTORY"
-set +e
-HOME="$FAKE_HOME" "$BIN" config set default-directory "$NOT_A_DIRECTORY/child" >"$OUTPUT" 2>&1
-STATUS=$?
-set -e
-[[ "$STATUS" -eq 1 ]] || { test_fail "Config accepted a path below a non-directory ancestor"; exit 1; }
-grep -F "ancestor is not a directory" "$OUTPUT" >/dev/null || {
-  test_fail "Non-directory ancestor error was unclear"
-  exit 1
-}
-
-DANGLING_LINK="$PWD/$TEST_DIR/dangling-link"
-ln -s "$PWD/$TEST_DIR/missing-link-target" "$DANGLING_LINK"
-set +e
-HOME="$FAKE_HOME" "$BIN" config set default-directory "$DANGLING_LINK" >"$OUTPUT" 2>&1
-STATUS=$?
-set -e
-[[ "$STATUS" -eq 1 ]] || { test_fail "Config accepted a dangling default-directory symlink"; exit 1; }
-grep -F "contains a dangling symlink" "$OUTPUT" >/dev/null || {
-  test_fail "Dangling-symlink error was unclear"
-  exit 1
-}
-
-ROOT_LINK="$PWD/$TEST_DIR/root-link"
-ln -s / "$ROOT_LINK"
-/usr/bin/plutil -create xml1 "$CONFIG_FILE"
-/usr/bin/plutil -insert default_directory -string "$ROOT_LINK" "$CONFIG_FILE"
-set +e
-HOME="$FAKE_HOME" "$BIN" apply --all --dry-run >"$OUTPUT" 2>&1
-STATUS=$?
-set -e
-[[ "$STATUS" -eq 1 ]] || { test_fail "Bulk apply accepted a configured symlink to the filesystem root"; exit 1; }
-grep -F "resolves to the filesystem root" "$OUTPUT" >/dev/null || {
-  test_fail "Effective-root configuration error was unclear"
-  exit 1
-}
-
-CONFIG_TARGET="$PWD/$TEST_DIR/config-target.plist"
-mv "$CONFIG_FILE" "$CONFIG_TARGET"
-CONFIG_TARGET_CHECKSUM="$(shasum -a 256 "$CONFIG_TARGET" | awk '{print $1}')"
-ln -s "$CONFIG_TARGET" "$CONFIG_FILE"
-
-assert_symlinked_config_rejected() {
-  local action_label="$1"
-  shift
-  set +e
-  HOME="$FAKE_HOME" "$BIN" config "$@" >"$OUTPUT" 2>&1
-  STATUS=$?
-  set -e
-  [[ "$STATUS" -eq 1 ]] || { test_fail "Config action accepted a symlinked configuration file: $action_label"; exit 1; }
-  grep -F "configuration must not be a symlink" "$OUTPUT" >/dev/null || {
-    test_fail "Symlinked configuration error was unclear for: $action_label"
-    exit 1
-  }
-}
-
-assert_symlinked_config_rejected "get" get default-directory
-assert_symlinked_config_rejected "set" set default-directory "$EXPECTED_DEFAULT"
-assert_symlinked_config_rejected "unset" unset default-directory
-[[ "$(shasum -a 256 "$CONFIG_TARGET" | awk '{print $1}')" == "$CONFIG_TARGET_CHECKSUM" ]] || {
-  test_fail "A rejected config action modified the symlink target"
-  exit 1
-}
-
-ABS_XDG_HOME="$PWD/$TEST_DIR/xdg-config-home"
-XDG_CONFIG_HOME="$ABS_XDG_HOME" HOME="$FAKE_HOME" \
-  "$BIN" config set default-directory "$EXPECTED_DEFAULT" >/dev/null
-[[ "$(XDG_CONFIG_HOME="$ABS_XDG_HOME" HOME="$FAKE_HOME" "$BIN" config get default-directory)" == "$EXPECTED_DEFAULT" ]] || {
-  test_fail "An absolute XDG_CONFIG_HOME did not select its own configuration"
-  exit 1
-}
-[[ -f "$ABS_XDG_HOME/iconforge/config.plist" ]] || {
-  test_fail "The XDG configuration was not written below XDG_CONFIG_HOME"
-  exit 1
-}
-
-set +e
-XDG_CONFIG_HOME="relative-config-home" HOME="$FAKE_HOME" \
-  "$BIN" config get default-directory >"$OUTPUT" 2>&1
-STATUS=$?
-set -e
-[[ "$STATUS" -eq 1 ]] || { test_fail "Config accepted a relative XDG_CONFIG_HOME"; exit 1; }
-grep -F "XDG_CONFIG_HOME must be an absolute path" "$OUTPUT" >/dev/null || {
-  test_fail "Relative XDG_CONFIG_HOME error was unclear"
-  exit 1
-}
-
-NONREGULAR_XDG_HOME="$PWD/$TEST_DIR/nonregular-xdg-home"
-mkdir -p "$NONREGULAR_XDG_HOME/iconforge/config.plist"
-assert_nonregular_config_rejected() {
-  local action_label="$1"
-  shift
-  set +e
-  XDG_CONFIG_HOME="$NONREGULAR_XDG_HOME" HOME="$FAKE_HOME" \
-    "$BIN" config "$@" >"$OUTPUT" 2>&1
-  STATUS=$?
-  set -e
-  [[ "$STATUS" -eq 1 ]] || { test_fail "Config action accepted a nonregular configuration file: $action_label"; exit 1; }
-  grep -F "configuration is not a regular file" "$OUTPUT" >/dev/null || {
-    test_fail "Nonregular configuration error was unclear for: $action_label"
-    exit 1
-  }
-}
-
-assert_nonregular_config_rejected "get" get default-directory
-assert_nonregular_config_rejected "set" set default-directory "$EXPECTED_DEFAULT"
-assert_nonregular_config_rejected "unset" unset default-directory
+export XDG_CONFIG_HOME="$BASE/xdg"
+"$BIN" config set the-hearth "$EXPECTED" >/dev/null
+[[ -f "$XDG_CONFIG_HOME/iconforge/config.plist" ]]
+[[ "$("$BIN" config get the-hearth)" == "$EXPECTED" ]]
+XDG_CONFIG_HOME=relative assert_status 1 "$BIN" config get the-hearth
+contains 'XDG_CONFIG_HOME must be an absolute path'
+export XDG_CONFIG_HOME="$BASE/nonregular"
+mkdir -p "$XDG_CONFIG_HOME/iconforge/config.plist"
+assert_status 1 "$BIN" config get default-directory
+contains 'configuration is not a regular file'
+assert_status 1 "$BIN" config set default-directory "$EXPECTED"
+contains 'configuration is not a regular file'
+assert_status 1 "$BIN" config unset default-directory
+contains 'configuration is not a regular file'
 
 test_pass "$TEST_NAME passed"

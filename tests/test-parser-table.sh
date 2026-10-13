@@ -163,8 +163,10 @@ done
 for flag in -h --help; do
   assert_status 0 nuke "$flag"
 done
+assert_status 0 refresh --help
+assert_recognized refresh --dry-run
 
-# Every command accepts -- as its end-of-options marker.
+# Existing commands retain -- as their end-of-options marker.
 mkdir -p "$ABS_TEST_DIR/root-marker" "$ABS_TEST_DIR/forge-marker"
 set +e
 (
@@ -204,19 +206,22 @@ assert_status 2 apply "$APP" -i "$ICON" -dn
 assert_status 2 restore "$APP" -dn
 assert_status 2 nuke -dh
 
-# Long options never accept an equals-sign value form.
+# Long value options accept equals syntax; boolean options do not.
 assert_status 2 --help=yes
 assert_status 2 help --help=yes
 assert_status 2 config --help=yes
-assert_status 2 forge "$INPUT" "--output=$FORGE_OUTPUT"
+assert_status 0 forge "$INPUT" "--output=$FORGE_OUTPUT" --dry-run
 assert_status 2 inspect --help=yes
-assert_status 2 apply "$APP" "--icon=$ICON"
-assert_status 2 apply "$APP" -i "$ICON" --strategy=native
+assert_status 0 apply "$APP" "--icon=$ICON" --dry-run
+assert_status 0 apply "$APP" -i "$ICON" --strategy=native --dry-run
+assert_status 0 apply "$APP" "--from=$ICON_LIBRARY" --dry-run
+assert_status 0 apply "$APP" "--from=$ICON_LIBRARY" "--app-root=$APP_ROOT" --dry-run
+assert_status 0 apply --all "--from=$ICON_LIBRARY" --dry-run
 assert_status 2 apply "--all=$ICON_LIBRARY"
 assert_status 2 restore "$APP" --dry-run=yes
 assert_status 2 nuke --dry-run=yes
 
-# Documented value options require a separate, nonempty operand.
+# Documented value options require a nonempty value.
 for flag in -o --output; do
   assert_status 2 forge "$INPUT" "$flag"
 done
@@ -252,7 +257,6 @@ for command in forge config inspect restore nuke help; do
 done
 assert_status 2 apply -V
 assert_status 2 apply --version
-assert_status 2 refresh
 assert_status 2 apply "$APP" -i "$ICON" -s legacy-native-alias
 
 test_pass "$TEST_NAME passed"
