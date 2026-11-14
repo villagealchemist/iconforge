@@ -220,7 +220,7 @@ set -e
 signal_after="$(shasum -a 256 "$TEST_DIR/signal/output/i-just-wanna-be-an-icon.icns" | awk '{print $1}')"
 [[ "$signal_rc" -ne 0 ]] || { test_fail "TERM during final publication reported success"; exit 1; }
 [[ "$signal_before" == "$signal_after" ]] || { test_fail "TERM during final publication did not roll back"; exit 1; }
-if find "$TEST_DIR/signal/temp" -mindepth 1 -print -quit | grep -q .; then
+if find "$TEST_DIR/signal/temp" -mindepth 1 -maxdepth 1 ! -name 'iconforge-report.*' -print -quit | grep -q .; then
   test_fail "TERM during publication left staging files"
   exit 1
 fi

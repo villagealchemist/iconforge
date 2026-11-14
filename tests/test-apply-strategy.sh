@@ -62,7 +62,7 @@ cat >"$FAKE_BIN/codesign" <<'EOF'
 set -euo pipefail
 printf '%s\n' "$*" >>"$ICONFORGE_TEST_LOG_DIR/codesign.log"
 if [[ -f "$ICONFORGE_TEST_LOG_DIR/force-verify-failure" ]]; then
-  case "$*" in *--verify*VerifyFail.app*) exit 1 ;; esac
+  case "$*" in *--verify*VerifyFail.app*|*--verify*RollbackFail.app*) exit 1 ;; esac
 fi
 EOF
 cat >"$FAKE_BIN/touch" <<'EOF'
@@ -93,6 +93,10 @@ cat >"$FAKE_BIN/rm" <<'EOF'
 #!/usr/bin/env bash
 printf '%s\n' "$*" >>"$ICONFORGE_TEST_LOG_DIR/rm.log"
 EOF
+cat >"$FAKE_BIN/getconf" <<'EOF'
+#!/usr/bin/env bash
+printf '%s\n' "$ICONFORGE_TEST_LOG_DIR/cache"
+EOF
 chmod +x "$FAKE_BIN"/*
 
 run_cli() {
@@ -105,6 +109,7 @@ run_cli() {
   ICONFORGE_CP_BIN="$FAKE_BIN/cp" \
   ICONFORGE_KILLALL_BIN="$FAKE_BIN/killall" \
   ICONFORGE_RM_BIN="$FAKE_BIN/rm" \
+  ICONFORGE_GETCONF_BIN="$FAKE_BIN/getconf" \
   "$BIN" "$@" >"$OUTPUT" 2>&1
 }
 
@@ -335,6 +340,28 @@ assert_output "Missing required tool: codesign"
   exit 1
 }
 
+cp "$TEST_IMAGE1" "$ABS_TEST_DIR/invalid-replacement.icns"
+set +e
+ICONFORGE_TEST_CODESIGN_BIN="$ABS_TEST_DIR/missing-codesign" \
+  run_cli apply "$MISSING_CODESIGN_APP" -i "$ABS_TEST_DIR/invalid-replacement.icns" -s internal-icns
+STATUS=$?
+set -e
+[[ "$STATUS" -eq 1 ]] || { test_fail "Independent internal preflight failures should fail without writes"; exit 1; }
+assert_output "Invalid ICNS file: $ABS_TEST_DIR/invalid-replacement.icns"
+assert_output "Missing required tool: codesign"
+[[ "$(shasum -a 256 "$missing_codesign_target" | awk '{print $1}')" == "$missing_codesign_before" ]] || {
+  test_fail "Combined internal preflight errors changed the live icon"
+  exit 1
+}
+
+set +e
+run_cli apply "$ABS_TEST_DIR/DoesNotExist.app" -i "$ABS_TEST_DIR/invalid-replacement.icns"
+STATUS=$?
+set -e
+[[ "$STATUS" -eq 1 ]] || { test_fail "Invalid app and icon inputs should fail"; exit 1; }
+assert_output "DoesNotExist.app"
+assert_output "Invalid ICNS file: $ABS_TEST_DIR/invalid-replacement.icns"
+
 set +e
 run_cli apply "$SYMLINK_APP" -i "$ABS_TEST_DIR/replacement.icns" -s internal-icns
 STATUS=$?
@@ -460,7 +487,7 @@ for signal_case in 'HUP 129' 'INT 130' 'TERM 143'; do
     exit 1
   }
   assert_log "$LOGS/codesign.log" "--verify --deep --strict --all-architectures $SIGNAL_APPLY_APP"
-  if find "$ABS_TEST_DIR/signal-temp" -mindepth 1 -print -quit | grep -q .; then
+  if find "$ABS_TEST_DIR/signal-temp" -mindepth 1 -name 'iconforge-internal-rollback.*' -print -quit | grep -q .; then
     test_fail "$signal_name during internal apply left a rollback file"
     exit 1
   fi
@@ -484,7 +511,7 @@ rm -f "$LOGS/signal-on-rename" "$LOGS/signal-fired"
   exit 1
 }
 assert_log "$LOGS/codesign.log" "--verify --deep --strict --all-architectures $SIGNAL_RESTORE_APP"
-if find "$ABS_TEST_DIR/signal-temp" -mindepth 1 -print -quit | grep -q .; then
+if find "$ABS_TEST_DIR/signal-temp" -mindepth 1 -name 'iconforge-restore.*' -print -quit | grep -q .; then
   test_fail "TERM during internal restore left a rollback file"
   exit 1
 fi
@@ -507,6 +534,7 @@ HOME=/private/tmp/.. \
   ICONFORGE_NATIVE_ICON="$FAKE_BIN/native-helper" \
   ICONFORGE_KILLALL_BIN="$FAKE_BIN/killall" \
   ICONFORGE_RM_BIN="$FAKE_BIN/rm" \
+  ICONFORGE_GETCONF_BIN="$FAKE_BIN/getconf" \
   "$BIN" nuke -d >"$OUTPUT" 2>&1
 assert_output "$EXPECTED_NUKE_TARGET"
 if grep -F '/private/tmp/../Library/Caches' "$OUTPUT" >/dev/null; then
@@ -622,7 +650,7 @@ assert_output "Bundled native icon helper not found"
 trap_exit_marker="$ABS_TEST_DIR/restored-exit-trap"
 (
   # This is a separate sourced-code probe; it does not consume the earlier subshell's assignment.
-  # shellcheck disable=SC2031
+  # shellcheck disable=SC2030,SC2031
   export ICONFORGE_ROOT="$PWD"
   source "$PWD/lib/iconforge/common.sh"
   source "$PWD/lib/iconforge/strategy-internal-icns.sh"
@@ -651,5 +679,104 @@ trap_exit_marker="$ABS_TEST_DIR/restored-exit-trap"
   [[ "$(trap -p TERM)" == "$saved_term" ]]
 )
 [[ -f "$trap_exit_marker" ]] || { test_fail "Internal transaction did not restore the prior EXIT trap"; exit 1; }
+
+abrupt_exit_marker="$ABS_TEST_DIR/abrupt-exit-trap"
+set +e
+(
+  # This independent exit-handler probe initializes its own sourced environment.
+  # shellcheck disable=SC2030,SC2031
+  export ICONFORGE_ROOT="$PWD"
+  source "$PWD/lib/iconforge/common.sh"
+  source "$PWD/lib/iconforge/strategy-internal-icns.sh"
+  APP_PATH="$SIGNAL_APPLY_APP"
+  APP_INFO_PLIST="$APP_PATH/Contents/Info.plist"
+  APP_RESOURCES_DIR="$APP_PATH/Contents/Resources"
+  APP_ICON_TARGET="$APP_RESOURCES_DIR/SignalApply.icns"
+  APP_ICON_BACKUP="$APP_RESOURCES_DIR/SignalApply_ugly.icns"
+  rollback_probe="$ABS_TEST_DIR/abrupt-trap-rollback.icns"
+  cp "$APP_ICON_TARGET" "$rollback_probe"
+  trap 'printf "%s %s\n" "$?" "$BASH_SUBSHELL" >"$abrupt_exit_marker"' EXIT
+  internal_transaction_begin apply "$rollback_probe"
+  exit 73
+)
+STATUS=$?
+set -e
+[[ "$STATUS" -eq 73 && "$(cat "$abrupt_exit_marker")" == "73 1" ]] || {
+  test_fail "Transaction EXIT did not preserve the prior status and original shell for its saved handler"
+  exit 1
+}
+[[ ! -e "$ABS_TEST_DIR/abrupt-trap-rollback.icns" ]] || { test_fail "Abrupt exit left a rollback file"; exit 1; }
+
+ROLLBACK_FAIL_APP="$ABS_TEST_DIR/RollbackFail.app"
+create_app "$ROLLBACK_FAIL_APP" RollbackFail
+mkdir -p "$ABS_TEST_DIR/recovery-temp"
+rm -f "$LOGS/cp-count"
+printf '4\n' >"$LOGS/cp-fail-at"
+: >"$LOGS/force-verify-failure"
+set +e
+TMPDIR="$ABS_TEST_DIR/recovery-temp" run_cli apply "$ROLLBACK_FAIL_APP" -i "$ABS_TEST_DIR/replacement.icns" -s internal-icns
+STATUS=$?
+set -e
+rm -f "$LOGS/cp-fail-at" "$LOGS/force-verify-failure"
+[[ "$STATUS" -eq 1 ]] || { test_fail "A failed rollback should preserve the original operation's failure"; exit 1; }
+recovery_source="$(find "$ABS_TEST_DIR/recovery-temp" -maxdepth 1 -name 'iconforge-internal-rollback.*' -print)"
+[[ -n "$recovery_source" && "$recovery_source" != *$'\n'* && -f "$recovery_source" ]] || {
+  test_fail "A failed rollback did not retain exactly one pre-operation recovery file"
+  exit 1
+}
+assert_output "Retained pre-operation recovery icon: $recovery_source"
+assert_output "Retained original icon backup: $ROLLBACK_FAIL_APP/Contents/Resources/RollbackFail_ugly.icns"
+[[ "$(shasum -a 256 "$recovery_source" | awk '{print $1}')" == "$ORIGINAL_SUM" ]] || {
+  test_fail "The retained rollback source does not contain the original icon"
+  exit 1
+}
+[[ "$(shasum -a 256 "$ROLLBACK_FAIL_APP/Contents/Resources/RollbackFail_ugly.icns" | awk '{print $1}')" == "$ORIGINAL_SUM" ]] || {
+  test_fail "Failed original-icon restoration deleted or changed the new persistent backup"
+  exit 1
+}
+[[ "$(shasum -a 256 "$ROLLBACK_FAIL_APP/Contents/Resources/RollbackFail.icns" | awk '{print $1}')" == "$REPLACEMENT_SUM" ]] || {
+  test_fail "Rollback failure fixture did not retain the attempted replacement"
+  exit 1
+}
+
+ABRUPT_ROLLBACK_APP="$ABS_TEST_DIR/AbruptRollback.app"
+create_app "$ABRUPT_ROLLBACK_APP" AbruptRollback
+abrupt_recovery="$ABS_TEST_DIR/abrupt-recovery.icns"
+cp "$ABS_TEST_DIR/original.icns" "$abrupt_recovery"
+cp "$ABS_TEST_DIR/original.icns" "$ABRUPT_ROLLBACK_APP/Contents/Resources/AbruptRollback_ugly.icns"
+cp "$ABS_TEST_DIR/replacement.icns" "$ABRUPT_ROLLBACK_APP/Contents/Resources/AbruptRollback.icns"
+set +e
+(
+  # This independent rollback probe initializes its own sourced environment.
+  # shellcheck disable=SC2030,SC2031
+  export ICONFORGE_ROOT="$PWD"
+  source "$PWD/lib/iconforge/common.sh"
+  source "$PWD/lib/iconforge/strategy-internal-icns.sh"
+  APP_PATH="$ABRUPT_ROLLBACK_APP"
+  APP_INFO_PLIST="$APP_PATH/Contents/Info.plist"
+  APP_RESOURCES_DIR="$APP_PATH/Contents/Resources"
+  APP_ICON_TARGET="$APP_RESOURCES_DIR/AbruptRollback.icns"
+  APP_ICON_BACKUP="$APP_RESOURCES_DIR/AbruptRollback_ugly.icns"
+  # The EXIT handler calls this override indirectly through rollback.
+  # shellcheck disable=SC2329
+  strategy_internal_icns_atomic_copy() { fail "Simulated original-icon restoration failure"; }
+  internal_transaction_begin apply "$abrupt_recovery"
+  INTERNAL_TRANSACTION_DIRTY=true
+  INTERNAL_TRANSACTION_REMOVE_NEW_BACKUP=true
+  exit 73
+) >"$OUTPUT" 2>&1
+STATUS=$?
+set -e
+[[ "$STATUS" -eq 73 ]] || { test_fail "Abrupt exit with rollback failure changed the original exit status"; exit 1; }
+assert_output "Retained pre-operation recovery icon: $abrupt_recovery"
+assert_output "Retained original icon backup: $ABRUPT_ROLLBACK_APP/Contents/Resources/AbruptRollback_ugly.icns"
+[[ "$(shasum -a 256 "$abrupt_recovery" | awk '{print $1}')" == "$ORIGINAL_SUM" ]] || {
+  test_fail "Abrupt EXIT deleted or changed the failed rollback's recovery source"
+  exit 1
+}
+[[ "$(shasum -a 256 "$ABRUPT_ROLLBACK_APP/Contents/Resources/AbruptRollback_ugly.icns" | awk '{print $1}')" == "$ORIGINAL_SUM" ]] || {
+  test_fail "Abrupt EXIT deleted or changed the new persistent backup after failed restoration"
+  exit 1
+}
 
 test_pass "$TEST_NAME passed"

@@ -20,6 +20,9 @@ scan_icon_library() {
   local icon_file
   local basename_value
   local key
+  local canonical_file
+  local scan_file
+  local scan_status=0
 
   library_reset
   [[ -d "$icon_root" ]] || { fail "Icon directory not found: $icon_root"; return 1; }
@@ -45,21 +48,46 @@ scan_icon_library() {
 
   ICON_LIBRARY_ROOT="$canonical_root"
 
-  while IFS= read -r icon_file; do
+  scan_file="$(mktemp "${ICONFORGE_REPORT_DIRECTORY:-$(iconforge_temp_root)}/iconforge-library.XXXXXX")" || {
+    fail "Could not create an icon library manifest. Check temporary directory access and available disk space." || return 1
+  }
+  if ! find "$ICON_LIBRARY_ROOT" -mindepth 1 \
+    \( -type l -o -type d \( -name '.*' -o -name '_*' -o -iname '*.app' -o -iname '*.iconset' \) \) -prune -o \
+    -type f -iname '*.icns' ! -name '.*' ! -name '_*' -print0 >"$scan_file"; then
+    fail "Could not scan the complete icon library: $ICON_LIBRARY_ROOT. Resolve the directory traversal errors above or select an accessible library. No applications will be modified from this incomplete scan." || true
+    scan_status=1
+  fi
+  if ! sort -z "$scan_file" -o "$scan_file"; then
+    rm -f "$scan_file"
+    library_reset
+    fail "Could not sort the icon library manifest. Check available temporary disk space and retry." || return 1
+  fi
+
+  while IFS= read -r -d '' icon_file; do
     [[ -n "$icon_file" ]] || continue
     basename_value="$(basename "$icon_file")"
     case "$basename_value" in
       *_[uU][gG][lL][yY].[iI][cC][nN][sS]) continue ;;
     esac
     key="${basename_value%.*}"
-    ICON_LIBRARY_FILES+=("$(realpath -- "$icon_file")")
+    if ! canonical_file="$(realpath -- "$icon_file")"; then
+      fail "Could not resolve icon file: $icon_file. Check that it still exists and is readable." || true
+      scan_status=1
+      continue
+    fi
+    if [[ ! -r "$canonical_file" ]]; then
+      fail "Icon file is not readable: $canonical_file. Correct file access or remove it from this library." || true
+      scan_status=1
+      continue
+    fi
+    ICON_LIBRARY_FILES+=("$canonical_file")
     ICON_LIBRARY_KEYS+=("$key")
     ICON_LIBRARY_NORMALIZED_KEYS+=("$(normalize_match_token "$key")")
-  done < <(
-    find "$ICON_LIBRARY_ROOT" -mindepth 1 \
-      \( -type l -o -type d \( -name '.*' -o -name '_*' -o -iname '*.app' -o -iname '*.iconset' \) \) -prune -o \
-      -type f -iname '*.icns' ! -name '.*' ! -name '_*' -print 2>/dev/null | sort
-  )
+  done <"$scan_file"
+  rm -f "$scan_file"
 
-  return 0
+  if [[ "$scan_status" -ne 0 ]]; then
+    library_reset
+  fi
+  return "$scan_status"
 }

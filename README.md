@@ -77,6 +77,11 @@ iconforge capabilities
 macOS application icons are implemented; mobile and other platforms are not.
 Finding a protected system application does not make its icon writable.
 
+Bulk apply identifies apps that need attention, including those requiring
+authorization, without requiring verbose output. Failed runs and warnings can
+also retain a private local diagnostic report. See the
+[diagnostics and recovery guide](docs/CLI.md#diagnostics-and-recovery).
+
 Shell completion is available without automatically editing your startup files:
 
 ```bash

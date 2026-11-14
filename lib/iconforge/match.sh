@@ -128,7 +128,7 @@ print_match_candidates() {
 }
 
 iconforge_input_is_tty() {
-  [[ -t 0 && -t 2 ]]
+  [[ -t 0 && ( "${ICONFORGE_STDERR_IS_TTY:-false}" == true || -t 2 ) ]]
 }
 
 confirm_app_suggestion() {
@@ -170,7 +170,7 @@ resolve_app_path() {
       ;;
   esac
 
-  discover_applications
+  discover_applications || return 1
   if match_application_name "$input"; then
     record="$MATCH_RECORD"
     if [[ "$MATCH_STATUS" == "matched-partial" ]]; then

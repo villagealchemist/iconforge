@@ -15,7 +15,11 @@ normalize_match_token() {
   local raw_value="$1" normalized=""
   # One native Unicode-normalization implementation for direct and bulk apply.
   if [[ -x "${ICONFORGE_NATIVE_ICON:-}" ]]; then
-    normalized="$("$ICONFORGE_NATIVE_ICON" normalize "$raw_value" 2>/dev/null || true)"
+    if ! normalized="$("$ICONFORGE_NATIVE_ICON" normalize "$raw_value")"; then
+      warn "Native application-name normalization failed; using the locale-aware fallback."
+      remedy "Rebuild or reinstall the native helper to restore Unicode normalization, or use an exact application path."
+      normalized=""
+    fi
   fi
   if [[ -n "$normalized" ]]; then printf '%s\n' "$normalized"; else normalize_match_token_fallback "$raw_value"; fi
 }
@@ -23,7 +27,9 @@ normalize_match_token() {
 discovery_add_record() {
   local app_path="$1" existing existing_path info_plist="$1/Contents/Info.plist"
   local bundle_id display_name bundle_name file_name
-  app_path="$(realpath -- "$app_path")" || return 1
+  app_path="$(realpath -- "$app_path")" || {
+    fail "Could not resolve a discovered application path: $1" || return 1
+  }
   for existing in "${DISCOVERED_APP_RECORDS[@]+"${DISCOVERED_APP_RECORDS[@]}"}"; do
     existing_path="${existing%%$'\t'*}"
     [[ "$existing_path" == "$app_path" ]] && return 0
@@ -44,15 +50,28 @@ discover_applications() {
     "${ICONFORGE_TEST_CORE_SERVICES_DIR:-/System/Library/CoreServices}"
     "${ICONFORGE_EXTRA_APPLICATION_ROOTS[@]+"${ICONFORGE_EXTRA_APPLICATION_ROOTS[@]}"}"
   )
-  local search_root app_path
+  local search_root app_path scan_output
+  local scan_failed=false
+
   discovery_reset
   for search_root in "${search_roots[@]}"; do
     [[ -d "$search_root" ]] || continue
+    if ! scan_output="$(set -o pipefail; find "$search_root" -mindepth 1 -maxdepth 2 -type d -iname '*.app' -prune -print | sort)"; then
+      fail "Could not completely scan applications under: $search_root" || true
+      scan_failed=true
+      continue
+    fi
     while IFS= read -r app_path; do
-      [[ -f "$app_path/Contents/Info.plist" ]] || continue
-      discovery_add_record "$app_path"
-    done < <(find "$search_root" -mindepth 1 -maxdepth 2 -type d -iname '*.app' -prune -print 2>/dev/null | sort)
+      [[ -n "$app_path" && -f "$app_path/Contents/Info.plist" ]] || continue
+      discovery_add_record "$app_path" || scan_failed=true
+    done <<<"$scan_output"
   done
+  if [[ "$scan_failed" == true ]]; then
+    discovery_reset
+    remedy "Resolve the reported application-directory scan errors and retry, or supply an exact application path. Incomplete discovery results were discarded."
+    return 1
+  fi
+  return 0
 }
 
 discovered_app_field() { printf '%s\n' "$1" | awk -F '\t' -v index="$2" '{print $index}'; }

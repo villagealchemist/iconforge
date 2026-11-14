@@ -191,25 +191,35 @@ BULK_CANDIDATE_PATHS=()
 bulk_fail_duplicate_keys() {
   local i
   local j
+  local failed=false
   for ((i = 0; i < ${#ICON_LIBRARY_NORMALIZED_KEYS[@]}; i++)); do
     [[ -n "${ICON_LIBRARY_NORMALIZED_KEYS[$i]}" ]] || {
-      fail "Icon filename is empty after normalization: ${ICON_LIBRARY_FILES[$i]}"
-      return 1
+      fail "Icon filename is empty after normalization: ${ICON_LIBRARY_FILES[$i]}" || true
+      remedy "Rename this icon to the exact application name."
+      failed=true
+      continue
     }
     for ((j = i + 1; j < ${#ICON_LIBRARY_NORMALIZED_KEYS[@]}; j++)); do
       if [[ "${ICON_LIBRARY_NORMALIZED_KEYS[$i]}" == "${ICON_LIBRARY_NORMALIZED_KEYS[$j]}" ]]; then
-        fail "Duplicate normalized icon key '${ICON_LIBRARY_NORMALIZED_KEYS[$i]}': ${ICON_LIBRARY_FILES[$i]} and ${ICON_LIBRARY_FILES[$j]}"
-        return 1
+        fail "Duplicate normalized icon key '${ICON_LIBRARY_NORMALIZED_KEYS[$i]}': ${ICON_LIBRARY_FILES[$i]} and ${ICON_LIBRARY_FILES[$j]}" || true
+        remedy "Keep one icon per application name, or move the extra icon outside this library."
+        failed=true
       fi
     done
   done
+  [[ "$failed" != true ]]
 }
 
 bulk_validate_icons() {
   local icon_file
+  local failed=false
   for icon_file in "${ICON_LIBRARY_FILES[@]+"${ICON_LIBRARY_FILES[@]}"}"; do
-    validate_icns_file "$icon_file" || return 1
+    if ! validate_icns_file "$icon_file"; then
+      remedy "Replace or regenerate this ICNS file before retrying: $icon_file"
+      failed=true
+    fi
   done
+  [[ "$failed" != true ]]
 }
 
 bulk_match_icons() {
@@ -221,6 +231,7 @@ bulk_match_icons() {
   local candidate_record
   local candidate_start
   local candidate_count
+  local failed=false
 
   BULK_STATUSES=()
   BULK_APP_PATHS=()
@@ -228,7 +239,7 @@ bulk_match_icons() {
   BULK_CANDIDATE_STARTS=()
   BULK_CANDIDATE_COUNTS=()
   BULK_CANDIDATE_PATHS=()
-  discover_applications
+  discover_applications || return 1
 
   for ((i = 0; i < ${#ICON_LIBRARY_FILES[@]}; i++)); do
     key="${ICON_LIBRARY_KEYS[$i]}"
@@ -272,11 +283,13 @@ bulk_match_icons() {
     for ((j = i + 1; j < ${#BULK_APP_PATHS[@]}; j++)); do
       [[ -n "${BULK_APP_PATHS[$j]}" ]] || continue
       if [[ "${BULK_APP_PATHS[$i]}" == "${BULK_APP_PATHS[$j]}" ]]; then
-        fail "Two icon keys resolve to the same app: ${ICON_LIBRARY_KEYS[$i]} and ${ICON_LIBRARY_KEYS[$j]} -> ${BULK_APP_PATHS[$i]}"
-        return 1
+        fail "Two icon keys resolve to the same app: ${ICON_LIBRARY_KEYS[$i]} and ${ICON_LIBRARY_KEYS[$j]} -> ${BULK_APP_PATHS[$i]}" || true
+        remedy "Keep one icon for this app in the library; use direct apply to select a different icon explicitly."
+        failed=true
       fi
     done
   done
+  [[ "$failed" != true ]]
 }
 
 bulk_report_ambiguity() {
@@ -289,7 +302,7 @@ bulk_report_ambiguity() {
   note "Skipped ambiguous icon '${ICON_LIBRARY_KEYS[$index]}'."
   for ((candidate_index = start; candidate_index < start + count; candidate_index++)); do
     candidate_path="${BULK_CANDIDATE_PATHS[$candidate_index]}"
-    note "Retry directly: $(format_cmd iconforge apply "$candidate_path" -i "${ICON_LIBRARY_FILES[$index]}")"
+    remedy "Retry directly: $(format_cmd iconforge apply "$candidate_path" -i "${ICON_LIBRARY_FILES[$index]}")"
   done
 }
 
@@ -331,7 +344,7 @@ bulk_confirm_suggestions() {
         BULK_MESSAGES[i]="partial suggestions require a terminal; retry with the exact app name or path"
       fi
       note "Skipped partial suggestion '${ICON_LIBRARY_KEYS[$i]}' -> '${BULK_APP_PATHS[$i]}'."
-      note "Retry directly: $(format_cmd iconforge apply "${BULK_APP_PATHS[$i]}" -i "${ICON_LIBRARY_FILES[$i]}")"
+      remedy "Retry directly: $(format_cmd iconforge apply "${BULK_APP_PATHS[$i]}" -i "${ICON_LIBRARY_FILES[$i]}")"
     fi
   done
 }
@@ -361,13 +374,27 @@ cmd_apply_bulk() {
   local declined=0
   local needs_authorization=0
   local failed=0
+  local preflight_failed=false
 
   require_native_icon_helper || return 1
   scan_icon_library "$icon_root" || return 1
   [[ "${#ICON_LIBRARY_FILES[@]}" -gt 0 ]] || { fail "No eligible .icns files found under: $icon_root"; return 1; }
-  bulk_fail_duplicate_keys || return 1
-  bulk_validate_icons || return 1
-  bulk_match_icons || return 1
+  bulk_fail_duplicate_keys || preflight_failed=true
+  bulk_validate_icons || preflight_failed=true
+  bulk_match_icons || preflight_failed=true
+  if [[ "$preflight_failed" == true ]]; then
+    for ((i = 0; i < ${#BULK_STATUSES[@]}; i++)); do
+      case "${BULK_STATUSES[$i]}" in
+        ambiguous) bulk_report_ambiguity "$i" ;;
+        unmatched)
+          note "No application matched: ${ICON_LIBRARY_FILES[$i]}"
+          remedy "Rename the icon to the exact installed app name, or apply it directly with the app's full path."
+          ;;
+      esac
+    done
+    fail "Bulk preflight found blocking issues; no applications were modified. Resolve every issue listed above and retry." || true
+    return 1
+  fi
   bulk_confirm_suggestions
 
   for ((i = 0; i < ${#ICON_LIBRARY_FILES[@]}; i++)); do
@@ -378,6 +405,8 @@ cmd_apply_bulk() {
         if strategy_native_icon_requires_authorization; then
           needs_authorization=$((needs_authorization + 1))
           bulk_print_entry "$verbose" "$i" "needs-authorization" "$APP_PATH"
+          fail "Native icon write needs authorization: $APP_PATH" || true
+          strategy_native_icon_authorization_guidance set "${ICON_LIBRARY_FILES[$i]}"
           continue
         fi
         if strategy_native_icon_apply "${ICON_LIBRARY_FILES[$i]}"; then
@@ -389,12 +418,14 @@ cmd_apply_bulk() {
           fi
         else
           failed=$((failed + 1))
-          bulk_print_entry "$verbose" "$i" "failed" "$APP_PATH"
+          bulk_print_entry true "$i" "failed" "$APP_PATH"
+          remedy "Retry after resolving the errors for this app: $(format_cmd iconforge apply "$APP_PATH" -i "${ICON_LIBRARY_FILES[$i]}")"
         fi
         ;;
       unmatched)
         unmatched=$((unmatched + 1))
-        bulk_print_entry "$verbose" "$i" "unmatched" "${BULK_MESSAGES[$i]}"
+        bulk_print_entry true "$i" "unmatched" "${BULK_MESSAGES[$i]}"
+        remedy "Rename ${ICON_LIBRARY_FILES[$i]} to the exact installed app name, or apply it directly with the app's full path."
         ;;
       ambiguous)
         ambiguous=$((ambiguous + 1))
@@ -427,6 +458,16 @@ cmd_apply_bulk() {
   printf 'Declined: %s\n' "$declined"
   printf 'Needs authorization: %s\n' "$needs_authorization"
   printf 'Failed: %s\n' "$failed"
+
+  if [[ "$failed" -gt 0 || "$needs_authorization" -gt 0 ]]; then
+    if [[ "$ICONFORGE_DRY_RUN" == true ]]; then
+      note "Dry-run completed with unresolved issues; no applications were modified."
+    elif [[ "$applied" -gt 0 ]]; then
+      note "Completed $applied application icon change(s). Other entries still need attention; successful changes were retained."
+    else
+      note "No application icon changes were confirmed. Review the errors above for any incomplete operations."
+    fi
+  fi
 
   [[ "$applied" -gt 0 && "$needs_authorization" -eq 0 && "$failed" -eq 0 ]]
 }
@@ -499,22 +540,46 @@ cmd_apply() {
   [[ "$icon_seen" == true && -n "$icon_file" ]] || { usage_fail "direct apply requires -i/--icon <file.icns>"; return 2; }
   strategy_validate_name "$strategy_name" || return $?
   [[ "$do_nuke" != true ]] || nuke_validate_current_user || return 1
-  inspect_app_metadata "$app_arg" || return 1
+  if ! inspect_app_metadata "$app_arg"; then
+    validate_icns_file "$icon_file" || true
+    return 1
+  fi
   selected_strategy="$(select_apply_strategy "$strategy_name")" || return 1
   apply_icon_with_strategy "$selected_strategy" "$icon_file" || return $?
-  run_requested_nuke "$do_nuke" "$APP_PATH" || return 1
+  if ! run_requested_nuke "$do_nuke" "$APP_PATH"; then
+    print_direct_apply_result "$selected_strategy" false
+    if [[ "$ICONFORGE_DRY_RUN" == true ]]; then
+      fail "The icon plan validated, but the requested cache refresh plan did not complete." || true
+      remedy "Resolve the refresh errors and retry the dry-run. No application changes were made."
+    else
+      fail "The icon operation completed, but the requested cache refresh did not complete." || true
+      remedy "The icon change has been retained. Resolve the refresh errors, then retry: iconforge nuke"
+    fi
+    return 1
+  fi
   print_direct_apply_result "$selected_strategy" "$do_nuke"
 }
 
 collect_internal_backups() {
   INTERNAL_BACKUPS=()
   local backup
+  local backup_listing
+  local failed=false
   [[ -d "$APP_RESOURCES_DIR" ]] || return 0
+  backup_listing="$(find "$APP_RESOURCES_DIR" -mindepth 1 -maxdepth 1 -iname '*_ugly.icns' -print | sort)" || {
+    fail "Could not inspect every internal icon backup in $APP_RESOURCES_DIR" || true
+    remedy "Resolve the directory access error before modifying or restoring this app."
+    return 1
+  }
   while IFS= read -r backup; do
     [[ -n "$backup" ]] || continue
-    require_safe_loose_icon_path "Internal backup" "$APP_RESOURCES_DIR" "$backup" || return 1
-    INTERNAL_BACKUPS+=("$backup")
-  done < <(find "$APP_RESOURCES_DIR" -mindepth 1 -maxdepth 1 -iname '*_ugly.icns' -print 2>/dev/null | sort)
+    if require_safe_loose_icon_path "Internal backup" "$APP_RESOURCES_DIR" "$backup"; then
+      INTERNAL_BACKUPS+=("$backup")
+    else
+      failed=true
+    fi
+  done <<<"$backup_listing"
+  [[ "$failed" != true ]]
 }
 
 restore_internal_backup() {
@@ -544,6 +609,8 @@ restore_internal_backup() {
   }
   internal_transaction_begin restore "$rollback_file"
   if ! "$CP_BIN" -p "$target_file" "$rollback_file"; then
+    fail "Could not preserve the current icon before restoring its backup: $target_file" || true
+    remedy "Check source readability and free space in $temp_root. No restore was attempted."
     internal_transaction_abort 1 || transaction_status=$?
     return "$transaction_status"
   fi
@@ -593,6 +660,8 @@ cmd_restore() {
   local had_native=false
   local native_presence_status=0
   local restored_any=false
+  local preflight_failed=false
+  local native_presence_known=true
 
   while [[ $# -gt 0 ]]; do
     if [[ "$options_done" != true ]]; then
@@ -615,10 +684,11 @@ cmd_restore() {
   [[ "$do_nuke" != true ]] || nuke_validate_current_user || return 1
   inspect_app_metadata "$app_arg" || return 1
   require_native_icon_helper || return 1
-  collect_internal_backups || return 1
+  collect_internal_backups || preflight_failed=true
   [[ "${#INTERNAL_BACKUPS[@]}" -le 1 ]] || {
-    fail "Multiple internal icon backups found; refusing an ambiguous restore"
-    return 1
+    fail "Multiple internal icon backups found; refusing an ambiguous restore" || true
+    remedy "Identify the original backup that corresponds to the resolved app icon, and move unrelated backups outside the app before restoring."
+    preflight_failed=true
   }
   if strategy_native_icon_is_present; then
     had_native=true
@@ -626,34 +696,37 @@ cmd_restore() {
     native_presence_status=$?
     if [[ "$native_presence_status" -ne 1 ]]; then
       fail "Native helper could not determine whether $APP_PATH has a Finder custom icon (status $native_presence_status)" || true
-      return 1
+      native_presence_known=false
+      preflight_failed=true
     fi
   fi
-  [[ "${#INTERNAL_BACKUPS[@]}" -eq 1 || "$had_native" == true ]] || {
-    fail "No Finder custom icon or unambiguous internal backup exists for $APP_PATH"
-    return 1
-  }
+  if [[ "$native_presence_known" == true && "${#INTERNAL_BACKUPS[@]}" -eq 0 && "$had_native" != true ]]; then
+    fail "No Finder custom icon or unambiguous internal backup exists for $APP_PATH" || true
+    preflight_failed=true
+  fi
 
   if [[ "${#INTERNAL_BACKUPS[@]}" -eq 1 ]]; then
     APP_ICON_BACKUP="${INTERNAL_BACKUPS[0]}"
     [[ -n "$APP_ICON_TARGET" ]] || {
-      fail "Could not resolve the live internal icon that corresponds to the backup" || return 1
+      fail "Could not resolve the live internal icon that corresponds to the backup" || true
+      preflight_failed=true
     }
     internal_backup_matches_target "$APP_ICON_BACKUP" "$APP_ICON_TARGET" || {
-      fail "The internal backup does not correspond to the resolved app icon: $APP_ICON_BACKUP" || return 1
+      fail "The internal backup does not correspond to the resolved app icon: $APP_ICON_BACKUP" || true
+      preflight_failed=true
     }
-    require_existing_file_path "Current internal icon" "$APP_ICON_TARGET" || return 1
-    require_safe_mutable_app_info_plist "$APP_PATH" || return 1
-    strategy_internal_icns_is_writable || {
-      fail "Internal icon restore requires write access to the app bundle: $APP_PATH"
-      return 1
-    }
-    require_tool "$CODESIGN_BIN" "Missing required tool: codesign" || return 1
+    require_existing_file_path "Current internal icon" "$APP_ICON_TARGET" || preflight_failed=true
+    require_safe_mutable_app_info_plist "$APP_PATH" || preflight_failed=true
+    require_safe_loose_icon_path "Current internal icon" "$APP_RESOURCES_DIR" "$APP_ICON_TARGET" || preflight_failed=true
+    strategy_internal_icns_require_writable || preflight_failed=true
+    validate_icns_file "$APP_ICON_BACKUP" || preflight_failed=true
+    require_tool "$CODESIGN_BIN" "Missing required tool: codesign" || preflight_failed=true
   fi
   if [[ "$had_native" == true && "$ICONFORGE_DRY_RUN" != true ]] && strategy_native_icon_requires_authorization; then
-    strategy_native_icon_authorization_error
-    return 1
+    strategy_native_icon_authorization_error remove || true
+    preflight_failed=true
   fi
+  [[ "$preflight_failed" != true ]] || return 1
 
   if [[ "${#INTERNAL_BACKUPS[@]}" -eq 1 ]]; then
     restore_internal_backup "${INTERNAL_BACKUPS[0]}" || return $?
@@ -682,13 +755,43 @@ collect_nuke_targets() {
   }
   printf '%s\n' "$NUKE_USER_HOME/Library/Caches/com.apple.iconservices.store"
   printf '%s\n' "$NUKE_USER_HOME/Library/Caches/com.apple.iconservices"
-  darwin_cache_dir="$(/usr/bin/getconf DARWIN_USER_CACHE_DIR 2>/dev/null || true)"
+  darwin_cache_dir="$("${ICONFORGE_GETCONF_BIN:-/usr/bin/getconf}" DARWIN_USER_CACHE_DIR)" || {
+    fail "Could not resolve the macOS current-user cache directory." || true
+    remedy "Resolve the getconf error above and retry the cache refresh. Known cache paths will still be processed."
+    return 1
+  }
   if [[ -n "$darwin_cache_dir" && -d "$darwin_cache_dir" ]]; then
-    darwin_cache_dir="$(realpath -- "$darwin_cache_dir")" || return 1
+    darwin_cache_dir="$(realpath -- "$darwin_cache_dir")" || {
+      fail "Could not resolve the current-user cache path: $darwin_cache_dir" || true
+      return 1
+    }
     for entry in "$darwin_cache_dir"/com.apple.dock.iconcache "$darwin_cache_dir"/com.apple.iconservices*; do
       [[ -e "$entry" ]] && printf '%s\n' "$entry"
     done
   fi
+  return 0
+}
+
+nuke_refresh_process() {
+  local process_name="$1"
+  local tool_output=""
+  local tool_status=0
+
+  if [[ "$ICONFORGE_DRY_RUN" == true ]]; then
+    run_quiet_cmd "$KILLALL_BIN" "$process_name"
+    return $?
+  fi
+  tool_output="$(LC_ALL=C "$KILLALL_BIN" "$process_name" 2>&1)" || tool_status=$?
+  [[ "$tool_status" -ne 0 ]] || return 0
+  if [[ "$tool_status" -eq 1 ]]; then
+    case "$tool_output" in
+      'No matching processes belonging to you were found'|'No matching processes were found') return 0 ;;
+    esac
+  fi
+  [[ -z "$tool_output" ]] || stderr "$tool_output"
+  fail "Could not refresh $process_name (killall status $tool_status)." || true
+  remedy "Resolve the process-control error above and retry iconforge nuke. Other refresh steps will continue."
+  return 1
 }
 
 cmd_nuke() {
@@ -696,6 +799,9 @@ cmd_nuke() {
   local app_seen=false
   local options_done=false
   local target
+  local targets=""
+  local failed=false
+  local touched=false
 
   while [[ $# -gt 0 ]]; do
     if [[ "$options_done" != true ]]; then
@@ -715,29 +821,49 @@ cmd_nuke() {
 
   nuke_validate_current_user || return 1
   if [[ "$app_seen" == true ]]; then
-    inspect_app_metadata "$app_arg" || return 1
-    touch_app_bundle "$APP_PATH" || return 1
+    if inspect_app_metadata "$app_arg" && touch_app_bundle "$APP_PATH"; then
+      touched=true
+    else
+      fail "Could not refresh the requested app metadata: $app_arg" || true
+      failed=true
+    fi
   fi
 
+  targets="$(collect_nuke_targets)" || {
+    fail "Could not enumerate every current-user icon cache." || true
+    failed=true
+  }
   while IFS= read -r target; do
     [[ -n "$target" ]] || continue
     if [[ -e "$target" || "$ICONFORGE_DRY_RUN" == true ]]; then
-      run_cmd "$RM_BIN" -rf "$target" || return 1
+      if ! run_cmd "$RM_BIN" -rf "$target"; then
+        fail "Could not remove icon cache: $target" || true
+        remedy "Check ownership, file locks, and available access for this cache path; other cache refresh steps will continue."
+        failed=true
+      fi
     fi
-  done < <(collect_nuke_targets | /usr/bin/awk '!seen[$0]++')
+  done < <(printf '%s\n' "$targets" | /usr/bin/awk '!seen[$0]++')
 
-  run_quiet_cmd "$KILLALL_BIN" Finder || true
-  run_quiet_cmd "$KILLALL_BIN" Dock || true
-  run_quiet_cmd "$KILLALL_BIN" iconservicesagent || true
+  nuke_refresh_process Finder || failed=true
+  nuke_refresh_process Dock || failed=true
+  nuke_refresh_process iconservicesagent || failed=true
   if command -v qlmanage >/dev/null 2>&1; then
-    run_quiet_cmd qlmanage -r cache || true
+    if ! run_cmd qlmanage -r cache >/dev/null; then
+      fail "Quick Look cache refresh failed." || true
+      remedy "Resolve the Quick Look error above, then retry: iconforge nuke"
+      failed=true
+    fi
   fi
 
   if [[ "$ICONFORGE_DRY_RUN" == true ]]; then
     printf 'Planned current-user icon cache refresh\n'
-    [[ -z "$app_arg" ]] || printf 'Planned app touch: %s\n' "$APP_PATH"
+    [[ "$touched" != true ]] || printf 'Planned app touch: %s\n' "$APP_PATH"
+  elif [[ "$failed" == true ]]; then
+    printf 'Icon cache refresh completed with unresolved errors\n'
+    [[ "$touched" != true ]] || printf 'Touched app: %s\n' "$APP_PATH"
   else
     printf 'Icon caches refreshed\n'
-  [[ "$app_seen" != true ]] || printf 'Touched app: %s\n' "$APP_PATH"
+    [[ "$touched" != true ]] || printf 'Touched app: %s\n' "$APP_PATH"
   fi
+  [[ "$failed" != true ]]
 }

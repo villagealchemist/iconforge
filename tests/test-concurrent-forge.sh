@@ -62,9 +62,31 @@ fi
 assert_file_exists "$SHARED_OUTPUT/shared.icns"
 "$PWD/iconforge-native-icon/iconforge-native-icon" validate "$SHARED_OUTPUT/shared.icns"
 
-if find "$TEMP_ROOT" -mindepth 1 -print -quit | grep -q .; then
+if find "$TEMP_ROOT" -mindepth 1 -maxdepth 1 ! -name 'iconforge-report.*' -print -quit | grep -q .; then
   test_fail "Forge left temporary conversion files behind"
   exit 1
 fi
+
+report_count=0
+while IFS= read -r -d '' report_directory; do
+  report_count=$((report_count + 1))
+  report="$report_directory/report.log"
+  [[ -f "$report" && ! -L "$report" ]] || {
+    test_fail "Concurrent forge retained an invalid diagnostic report"
+    exit 1
+  }
+  grep -Fx 'Exit status: 1' "$report" >/dev/null || {
+    test_fail "The failed concurrent run did not complete its diagnostic report"
+    exit 1
+  }
+  if find "$report_directory" -mindepth 1 ! -name report.log -print -quit | grep -q .; then
+    test_fail "Concurrent forge retained capture pipes or temporary report files"
+    exit 1
+  fi
+done < <(find "$TEMP_ROOT" -mindepth 1 -maxdepth 1 -type d -name 'iconforge-report.*' -print0)
+[[ "$report_count" -eq 1 ]] || {
+  test_fail "Expected exactly one diagnostic report for the failed concurrent run"
+  exit 1
+}
 
 test_pass "$TEST_NAME passed"

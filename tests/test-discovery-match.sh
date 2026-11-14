@@ -127,4 +127,93 @@ grep -F "App bundle not found or invalid" "$TEST_DIR/output.log" >/dev/null || {
   exit 1
 }
 
+FAILED_ROOT_ONE="$PWD/$TEST_DIR/failed-one"
+FAILED_ROOT_TWO="$PWD/$TEST_DIR/failed-two"
+SCAN_LOG="$PWD/$TEST_DIR/scans.log"
+mkdir -p "$FAILED_ROOT_ONE" "$FAILED_ROOT_TWO"
+ICONFORGE_TEST_CURRENT_APPLICATIONS_DIR="$FAILED_ROOT_ONE"
+ICONFORGE_TEST_USER_APPLICATIONS_DIR="$FAILED_ROOT_TWO"
+ICONFORGE_TEST_APPLICATIONS_DIR="$ROOT"
+ICONFORGE_TEST_SYSTEM_APPLICATIONS_DIR="$PWD/$TEST_DIR/optional-missing"
+find() {
+  printf '%s\n' "$1" >>"$SCAN_LOG"
+  case "$1" in
+    "$FAILED_ROOT_ONE")
+      printf '%s\n' "$ROOT/Visual Studio Code.app"
+      printf 'find: first root scan failed after partial output\n' >&2
+      return 13
+      ;;
+    "$FAILED_ROOT_TWO")
+      printf 'find: second root scan failed independently\n' >&2
+      return 5
+      ;;
+    *) command find "$@" ;;
+  esac
+}
+STATUS=0
+discover_applications >"$TEST_DIR/scan-output.log" 2>&1 || STATUS=$?
+[[ "$STATUS" -ne 0 && "${#DISCOVERED_APP_RECORDS[@]}" -eq 0 ]] || {
+  test_fail "An incomplete scan exposed partial application records"
+  exit 1
+}
+for expected in 'first root scan failed' 'second root scan failed' "$FAILED_ROOT_ONE" "$FAILED_ROOT_TWO" 'Remedy:'; do
+  grep -F "$expected" "$TEST_DIR/scan-output.log" >/dev/null || {
+    test_fail "Independent discovery failure omitted $expected"
+    exit 1
+  }
+done
+grep -Fx "$ROOT" "$SCAN_LOG" >/dev/null || { test_fail "Discovery did not scan the later readable root"; exit 1; }
+STATUS=0
+resolve_app_path 'Visual Studio Code' >"$TEST_DIR/incomplete.stdout" 2>"$TEST_DIR/incomplete.stderr" || STATUS=$?
+[[ "$STATUS" -ne 0 && ! -s "$TEST_DIR/incomplete.stdout" ]] || {
+  test_fail "A name resolved successfully from an incomplete application inventory"
+  exit 1
+}
+if grep -F 'Could not resolve app bundle' "$TEST_DIR/incomplete.stderr"; then
+  test_fail "A scan failure was misreported as an application-name lookup failure"
+  exit 1
+fi
+cp "$SCAN_LOG" "$TEST_DIR/scans-before-explicit.log"
+[[ "$(resolve_app_path "$ROOT/Visual Studio Code.app")" == "$ROOT/Visual Studio Code.app" ]] || {
+  test_fail "An explicit app path failed because another search root was unreadable"
+  exit 1
+}
+cmp "$TEST_DIR/scans-before-explicit.log" "$SCAN_LOG" || { test_fail "An explicit app path invoked discovery"; exit 1; }
+unset -f find
+ICONFORGE_TEST_CURRENT_APPLICATIONS_DIR="$ROOT"
+ICONFORGE_TEST_USER_APPLICATIONS_DIR="$EMPTY"
+ICONFORGE_TEST_APPLICATIONS_DIR="$EMPTY"
+discover_applications 2>"$TEST_DIR/optional-root.stderr"
+[[ "${#DISCOVERED_APP_RECORDS[@]}" -eq 5 && ! -s "$TEST_DIR/optional-root.stderr" ]] || {
+  test_fail "A missing optional search root caused a discovery error"
+  exit 1
+}
+test_pass "Discovery collects independent scan failures and rejects incomplete inventories"
+
+REAL_NATIVE_HELPER="$ICONFORGE_NATIVE_ICON"
+ICONFORGE_NATIVE_ICON="$PWD/$TEST_DIR/normalization-helper"
+cat >"$ICONFORGE_NATIVE_ICON" <<'HELPER'
+#!/usr/bin/env bash
+printf 'unusable partial normalization\n'
+printf 'native normalization failed intentionally\n' >&2
+exit 17
+HELPER
+chmod +x "$ICONFORGE_NATIVE_ICON"
+NORMALIZED="$(normalize_match_token 'Visual_Studio-Code.app' 2>"$TEST_DIR/normalization.stderr")"
+[[ "$NORMALIZED" == 'visual studio code' ]] || { test_fail "A failed normalizer did not use the fallback"; exit 1; }
+for expected in 'native normalization failed intentionally' 'Warning:' 'Remedy:'; do
+  grep -F "$expected" "$TEST_DIR/normalization.stderr" >/dev/null || { test_fail "Normalization failure omitted $expected"; exit 1; }
+done
+cat >"$ICONFORGE_NATIVE_ICON" <<'HELPER'
+#!/usr/bin/env bash
+exit 0
+HELPER
+NORMALIZED="$(normalize_match_token '---' 2>"$TEST_DIR/normalization.stderr")"
+[[ -z "$NORMALIZED" && ! -s "$TEST_DIR/normalization.stderr" ]] || {
+  test_fail "A successful empty normalization was reported as a helper failure"
+  exit 1
+}
+ICONFORGE_NATIVE_ICON="$REAL_NATIVE_HELPER"
+test_pass "Normalization preserves helper errors while accepting valid empty output"
+
 test_pass "$TEST_NAME passed"
