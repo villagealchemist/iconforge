@@ -1,6 +1,6 @@
 # Architecture: keep policy separate from the platform
 
-## Implemented in 2.2.0
+## Implemented since 2.2.0
 
 ```text
 iconforge.sh
@@ -71,7 +71,7 @@ Treat these as separate capabilities:
 A backend may support export without supporting replacement of another app's icon.
 That distinction is essential for an honest mobile offering. Mobile platform rules
 and viable application/customization methods need platform-specific verification
-before implementation; IconForge 2.2.0 makes no mobile compatibility claims.
+before implementation; IconForge 2.3.0 makes no mobile compatibility claims.
 
 ### A practical path to v3
 

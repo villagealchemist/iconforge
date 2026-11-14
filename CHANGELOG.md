@@ -2,7 +2,7 @@
 
 All notable user-facing changes to IconForge are recorded here.
 
-## Unreleased
+## 2.3.0
 
 ### Error handling and recovery
 

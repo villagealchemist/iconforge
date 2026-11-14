@@ -119,6 +119,11 @@ grep -Fq 'shell_output("#{bin}/iconforge apply #{app} --dry-run")' "$FORMULA" ||
   exit 1
 }
 
+grep -Fq 'Native icon write needs authorization: #{app.realpath}' "$FORMULA" || {
+  test_fail "Formula test does not verify the affected app is named without verbose output"
+  exit 1
+}
+
 for public_command in 'config path' 'config show' capabilities doctor 'completion bash'; do
   grep -Fq "shell_output(\"#{bin}/iconforge $public_command\")" "$FORMULA" || {
     test_fail "Formula test does not exercise installed command: $public_command"

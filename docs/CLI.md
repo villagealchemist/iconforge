@@ -1,8 +1,8 @@
 # IconForge: forge, hearth, apply
 
-This is the public CLI contract for IconForge 2.2.0.
-The application backend remains macOS-only. This work changes user-facing
-configuration and orchestration, not the Go image processor or AppKit helper.
+This is the public CLI contract for IconForge 2.3.0. The application backend
+remains macOS-only. This release improves diagnostics, recovery, and application
+matching while retaining the forge and hearth configuration introduced in 2.2.0.
 
 ## A library that fits your filesystem
 
