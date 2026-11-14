@@ -3,8 +3,18 @@
 # Records are tab-separated: path, bundle id, display name, bundle name,
 # filename. This keeps the data model portable to macOS's system Bash.
 DISCOVERED_APP_RECORDS=()
+DISCOVERED_APP_BUNDLE_IDS=()
+DISCOVERED_APP_FILE_KEYS=()
+DISCOVERED_APP_DISPLAY_KEYS=()
+DISCOVERED_APP_BUNDLE_KEYS=()
 
-discovery_reset() { DISCOVERED_APP_RECORDS=(); }
+discovery_reset() {
+  DISCOVERED_APP_RECORDS=()
+  DISCOVERED_APP_BUNDLE_IDS=()
+  DISCOVERED_APP_FILE_KEYS=()
+  DISCOVERED_APP_DISPLAY_KEYS=()
+  DISCOVERED_APP_BUNDLE_KEYS=()
+}
 
 normalize_match_token_fallback() {
   printf '%s\n' "$1" | tr '[:upper:]' '[:lower:]' |
@@ -27,6 +37,7 @@ normalize_match_token() {
 discovery_add_record() {
   local app_path="$1" existing existing_path info_plist="$1/Contents/Info.plist"
   local bundle_id display_name bundle_name file_name
+  local file_key display_key="" bundle_key=""
   app_path="$(realpath -- "$app_path")" || {
     fail "Could not resolve a discovered application path: $1" || return 1
   }
@@ -38,7 +49,20 @@ discovery_add_record() {
   display_name="$(plist_string "$info_plist" ':CFBundleDisplayName')"
   bundle_name="$(plist_string "$info_plist" ':CFBundleName')"
   file_name="$(basename "$app_path")"
+  # Cache normalized names once per inventory. Bulk apply can then match each
+  # icon without spawning a normalizer for every app and every icon.
+  file_key="$(normalize_match_token "$file_name")" || return 1
+  [[ -z "$display_name" ]] || display_key="$(normalize_match_token "$display_name")" || return 1
+  if [[ "$bundle_name" == "$display_name" ]]; then
+    bundle_key="$display_key"
+  elif [[ -n "$bundle_name" ]]; then
+    bundle_key="$(normalize_match_token "$bundle_name")" || return 1
+  fi
   DISCOVERED_APP_RECORDS+=("$app_path"$'\t'"$bundle_id"$'\t'"$display_name"$'\t'"$bundle_name"$'\t'"$file_name")
+  DISCOVERED_APP_BUNDLE_IDS+=("$bundle_id")
+  DISCOVERED_APP_FILE_KEYS+=("$file_key")
+  DISCOVERED_APP_DISPLAY_KEYS+=("$display_key")
+  DISCOVERED_APP_BUNDLE_KEYS+=("$bundle_key")
 }
 
 discover_applications() {

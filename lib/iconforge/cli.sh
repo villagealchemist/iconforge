@@ -100,6 +100,7 @@ Options:
 Library: --from, then the-hearth, then legacy default-directory.
 Only an unambiguous exact normalized icon match is automatic. Explicit --icon
 never consults the library. --all is always required for bulk changes.
+Unmatched icons, failures, and authorization needs are named without --verbose.
 'nuke' is shorthand only after a direct app operand, before --. To address the
 application Nuke, use 'iconforge apply Nuke'. Flags also accept --name=value.
 HELP

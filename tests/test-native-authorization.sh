@@ -126,6 +126,7 @@ if run_cli apply --all "$ICONS"; then
 fi
 assert_output "Applied: 0"
 assert_output "Needs authorization: 1"
+assert_output "Native icon write needs authorization: $APP"
 assert_unchanged
 assert_retry set "$APP" "$ICON"
 
@@ -134,6 +135,7 @@ if run_cli apply --all "$ICONS" --dry-run; then
 fi
 assert_output "Would apply: 0"
 assert_output "Needs authorization: 1"
+assert_output "Native icon write needs authorization: $APP"
 assert_unchanged
 
 test_pass "$TEST_NAME passed"

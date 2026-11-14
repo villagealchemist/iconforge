@@ -69,6 +69,32 @@ STATUS=$?
 set -e
 [[ "$STATUS" -ne 0 && "$MATCH_STATUS" == ambiguous-partial ]] || { test_fail "Ambiguous partial did not fail closed"; exit 1; }
 
+# App names are normalized once when the inventory is built, rather than once
+# per application for every icon in a bulk request.
+REAL_HELPER="$ICONFORGE_NATIVE_ICON"
+COUNTING_HELPER="$PWD/$TEST_DIR/counting-helper"
+export ICONFORGE_TEST_REAL_NORMALIZER="$REAL_HELPER"
+export ICONFORGE_TEST_NORMALIZATION_LOG="$PWD/$TEST_DIR/normalization-calls"
+cat >"$COUNTING_HELPER" <<'HELPER'
+#!/usr/bin/env bash
+[[ "$1" != normalize ]] || printf 'normalize\n' >>"$ICONFORGE_TEST_NORMALIZATION_LOG"
+exec "$ICONFORGE_TEST_REAL_NORMALIZER" "$@"
+HELPER
+chmod +x "$COUNTING_HELPER"
+ICONFORGE_NATIVE_ICON="$COUNTING_HELPER"
+: >"$ICONFORGE_TEST_NORMALIZATION_LOG"
+match_application_name 'Visual Studio Code'
+match_application_name 'café'
+if match_application_name 'No matching application'; then
+  test_fail "Unexpected match for a missing application"; exit 1
+fi
+[[ "$(wc -l <"$ICONFORGE_TEST_NORMALIZATION_LOG" | tr -d ' ')" -eq 3 ]] || {
+  test_fail "Matching re-normalized the discovered applications"; exit 1
+}
+ICONFORGE_NATIVE_ICON="$REAL_HELPER"
+unset ICONFORGE_TEST_REAL_NORMALIZER ICONFORGE_TEST_NORMALIZATION_LOG
+test_pass "Repeated matches reuse the normalized application inventory"
+
 set +e
 resolve_app_path "café" >"$TEST_DIR/output.log" 2>&1
 STATUS=$?
@@ -104,6 +130,18 @@ grep -F "Multiple installed applications share this exact match" "$TEST_DIR/dupl
 [[ "$(cd "$ROOT" && resolve_app_path './Visual Studio Code.app')" == "$(realpath -- "$ROOT/Visual Studio Code.app")" ]] || {
   test_fail "A dot-qualified app path did not bypass name lookup"
   exit 1
+}
+ICONFORGE_TEST_USER_APPLICATIONS_DIR="$EMPTY"
+
+DUPLICATE_ID_ROOT="$PWD/$TEST_DIR/duplicate-id-apps"
+create_app "$DUPLICATE_ID_ROOT/Other Editor.app" com.example.code "Other Editor"
+ICONFORGE_TEST_USER_APPLICATIONS_DIR="$DUPLICATE_ID_ROOT"
+discover_applications
+if match_application_name 'Visual Studio Code'; then
+  test_fail "A duplicate bundle identifier unexpectedly resolved"; exit 1
+fi
+[[ "$MATCH_STATUS" == ambiguous-exact && "${#MATCH_CANDIDATES[@]}" -eq 2 ]] || {
+  test_fail "Duplicate bundle identifiers were not reported as ambiguous"; exit 1
 }
 ICONFORGE_TEST_USER_APPLICATIONS_DIR="$EMPTY"
 

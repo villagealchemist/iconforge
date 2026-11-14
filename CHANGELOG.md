@@ -6,6 +6,7 @@ All notable user-facing changes to IconForge are recorded here.
 
 ### Error handling and recovery
 
+- Reuse normalized application names across bulk matches to reduce repeated helper launches.
 - Report affected applications and actionable authorization guidance during bulk apply, even without verbose output.
 - Collect independent input, decoding, destination, matching, and prerequisite failures with affected paths and remedies.
   Continue eligible bulk app operations after an isolated failure and report completed work separately.
