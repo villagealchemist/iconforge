@@ -1,6 +1,6 @@
 # Architecture: keep policy separate from the platform
 
-## Implemented in 2.2.0
+## Implemented since 2.2.0
 
 ```text
 iconforge.sh
@@ -54,6 +54,14 @@ mobile frontend can then consume the same orchestration model rather than invoki
 interactive commands and parsing human output. The current adapter boundary gives
 that extraction a specific location; it is not yet that API.
 
+The current CLI's diagnostic reports and recovery guidance are presentation-layer
+behavior, not a stable machine interface. When extracting the model, represent
+affected items, outcomes, errors, recovery locations, and required user decisions
+as structured data. Let each frontend present those results and obtain consent;
+do not make a future UI parse terminal output or execute a suggested command.
+The macOS helper remains behind the platform adapter, and the CLI continues to
+work as a frontend of its own.
+
 Treat these as separate capabilities:
 
 1. Artwork processing: decode, crop/fit, resize, and normalize.
@@ -63,7 +71,22 @@ Treat these as separate capabilities:
 A backend may support export without supporting replacement of another app's icon.
 That distinction is essential for an honest mobile offering. Mobile platform rules
 and viable application/customization methods need platform-specific verification
-before implementation; IconForge 2.2.0 makes no mobile compatibility claims.
+before implementation; IconForge 2.3.0 makes no mobile compatibility claims.
+
+### A practical path to v3
+
+1. Define versioned requests, plans, and results for the existing forge and apply
+   flows, including per-item outcomes, stable error codes, cancellation, and
+   decisions that require user input. Keep the model free of terminal formatting.
+2. Move portable planning and image-processing orchestration into a shared core.
+   Keep application discovery, native icon installation, caches, and platform
+   preferences behind the macOS adapter. Exercise the core without AppKit.
+3. Adapt the CLI to the shared core while retaining its existing commands and
+   explicit confirmation behavior. Add a UI as another client of that core; the
+   UI should show a plan and collect decisions before executing changes.
+4. Add another platform only after identifying a concrete export or installation
+   capability and its constraints. Select an in-process, library, or IPC boundary
+   for the UI based on the actual frontend rather than assuming one in advance.
 
 Useful next increments are machine-readable plans/results, remembered explicit
 application mappings, named library profiles, dynamic app completion, a proper

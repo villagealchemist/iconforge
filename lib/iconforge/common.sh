@@ -59,6 +59,10 @@ note() {
   stderr "$*"
 }
 
+remedy() {
+  stderr "Remedy: $*"
+}
+
 join_by() {
   local separator="$1"
   shift || true
@@ -90,7 +94,12 @@ run_cmd() {
     return 0
   fi
 
-  "$@"
+  local status=0
+  "$@" || status=$?
+  if [[ "$status" -ne 0 ]]; then
+    fail "Command failed (exit $status): $(format_cmd "$@")" || true
+  fi
+  return "$status"
 }
 
 run_quiet_cmd() {
@@ -106,7 +115,9 @@ require_tool() {
   local tool="$1"
   local message="${2:-Required tool missing: $tool}"
   if ! command -v "$tool" >/dev/null 2>&1; then
-    fail "$message" || return 1
+    fail "$message" || true
+    remedy "Install or restore the required tool, then retry. No substitute executable was selected automatically."
+    return 1
   fi
 }
 
@@ -140,7 +151,10 @@ require_app_bundle_path() {
 }
 
 require_processor() {
-  [[ -x "$ICONFORGE_PROCESSOR" ]] || fail "iconforge-processor not found at $ICONFORGE_PROCESSOR"
+  [[ -x "$ICONFORGE_PROCESSOR" ]] && return 0
+  fail "iconforge-processor not found at $ICONFORGE_PROCESSOR" || true
+  remedy "Repair the IconForge installation or run make build in a source checkout."
+  return 1
 }
 
 validate_icns_file() {
@@ -355,6 +369,7 @@ inspect_app_metadata() {
   local value
   local candidate_names=()
   local line
+  local plist_diagnostics
 
   APP_PATH="$(resolve_app_path "$input")" || return 1
   require_app_bundle_path "$APP_PATH" || return 1
@@ -370,6 +385,12 @@ inspect_app_metadata() {
   APP_ICON_BACKUP=""
 
   [[ -f "$APP_INFO_PLIST" ]] || fail "Missing Info.plist in $APP_PATH" || return 1
+  if ! plist_diagnostics="$(/usr/bin/plutil -lint "$APP_INFO_PLIST" 2>&1)"; then
+    fail "App metadata is not a valid property list: $APP_INFO_PLIST" || true
+    note "$plist_diagnostics"
+    remedy "Use a valid application bundle from its trusted source; icon metadata could not be inspected."
+    return 1
+  fi
 
   APP_CF_BUNDLE_ICON_FILE="$(plist_string "$APP_INFO_PLIST" ":CFBundleIconFile")"
   APP_CF_BUNDLE_ICON_NAME="$(plist_string "$APP_INFO_PLIST" ":CFBundleIconName")"

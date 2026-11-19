@@ -43,6 +43,7 @@ FORGE_STAGE_ICNS=()
 FORGE_STAGE_PNG=()
 FORGE_EXISTING_TARGETS=()
 FORGE_INTERRUPT_STATUS=0
+FORGE_RECOVERY_STAGE=""
 
 forge_reset_manifest() {
   FORGE_INPUTS=()
@@ -155,34 +156,50 @@ forge_collect_recursive_inputs() {
   local output_root="$2"
   local output_prune=""
   local candidate
+  local canonical_candidate
+  local scan_file
+  local scan_status=0
 
   if [[ "$output_root" == "$root"/* ]]; then
     output_prune="$output_root"
   fi
+  scan_file="$(mktemp "${ICONFORGE_REPORT_DIRECTORY:-$(iconforge_temp_root)}/iconforge-inputs.XXXXXX")" || {
+    fail "Could not create an input scan manifest. Check available disk space and access to the temporary directory." || return 1
+  }
 
   if [[ -n "$output_prune" ]]; then
-    while IFS= read -r -d '' candidate; do
-      FORGE_INPUTS+=("$(realpath -- "$candidate")")
-    done < <(
-      find "$root" \
-        \( -mindepth 1 -type d -name '.*' -o -type d -iname '*.iconset' -o -path "$output_prune" \) -prune -o \
-        -type f \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.webp' \
-          -o -iname '*.tiff' -o -iname '*.tif' -o -iname '*.gif' \) ! -name '.*' -print0 | sort -z
-    )
+    find "$root" \
+      \( -mindepth 1 -type d -name '.*' -o -type d -iname '*.iconset' -o -path "$output_prune" \) -prune -o \
+      -type f \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.webp' \
+        -o -iname '*.tiff' -o -iname '*.tif' -o -iname '*.gif' \) ! -name '.*' -print0 >"$scan_file" || scan_status=1
   else
-    while IFS= read -r -d '' candidate; do
-      FORGE_INPUTS+=("$(realpath -- "$candidate")")
-    done < <(
-      find "$root" \
-        \( -mindepth 1 -type d -name '.*' -o -type d -iname '*.iconset' \) -prune -o \
-        -type f \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.webp' \
-          -o -iname '*.tiff' -o -iname '*.tif' -o -iname '*.gif' \) ! -name '.*' -print0 | sort -z
-    )
+    find "$root" \
+      \( -mindepth 1 -type d -name '.*' -o -type d -iname '*.iconset' \) -prune -o \
+      -type f \( -iname '*.png' -o -iname '*.jpg' -o -iname '*.jpeg' -o -iname '*.webp' \
+        -o -iname '*.tiff' -o -iname '*.tif' -o -iname '*.gif' \) ! -name '.*' -print0 >"$scan_file" || scan_status=1
   fi
+  if [[ "$scan_status" -ne 0 ]]; then
+    fail "Could not scan every source directory under $root. Resolve the traversal errors above, or select the readable images explicitly. No outputs will be written." || true
+  fi
+  if ! sort -z "$scan_file" -o "$scan_file"; then
+    rm -f "$scan_file"
+    fail "Could not sort the input manifest. Check temporary disk space and retry." || return 1
+  fi
+  while IFS= read -r -d '' candidate; do
+    if canonical_candidate="$(realpath -- "$candidate")"; then
+      FORGE_INPUTS+=("$canonical_candidate")
+    else
+      fail "Could not resolve source image: $candidate. Check that it still exists and is readable." || true
+      scan_status=1
+    fi
+  done <"$scan_file"
+  rm -f "$scan_file"
 
-  [[ "${#FORGE_INPUTS[@]}" -gt 0 ]] || {
-    fail "No supported images found under $root" || return 1
-  }
+  if [[ "${#FORGE_INPUTS[@]}" -eq 0 && "$scan_status" -eq 0 ]]; then
+    fail "No supported images found under $root. Supply PNG, JPEG, WebP, TIFF, or GIF source images." || true
+    scan_status=1
+  fi
+  return "$scan_status"
 }
 
 forge_validate_output_name() {
@@ -250,6 +267,7 @@ forge_collect_inputs() {
   local relative_path
   local stem
   local index
+  local collection_status=0
 
   [[ "${#operands[@]}" -gt 0 ]] || {
     forge_help >&2
@@ -267,7 +285,7 @@ forge_collect_inputs() {
       usage_fail "Recursive forge accepts exactly one directory" || return 2
     }
     root_abs="$(realpath -- "$first")" || return 1
-    forge_collect_recursive_inputs "$root_abs" "$output_root" || return $?
+    forge_collect_recursive_inputs "$root_abs" "$output_root" || collection_status=1
   else
     [[ "$recursive" != true ]] || {
       usage_fail "-r/--recursive requires exactly one directory input" || return 2
@@ -277,24 +295,39 @@ forge_collect_inputs() {
        ! { [[ -f "${operands[1]}" && ! -L "${operands[1]}" ]] && forge_supported_extension "${operands[1]}"; }; then
       output_name="${operands[1]}"
       forge_validate_output_name "$output_name" || return $?
-      FORGE_INPUTS+=("$(realpath -- "$first")")
+      if input_abs="$(realpath -- "$first")"; then
+        FORGE_INPUTS+=("$input_abs")
+      else
+        fail "Could not resolve input image: $first. Check that it still exists and is readable." || true
+        collection_status=1
+      fi
     else
       for input in "${operands[@]}"; do
-        [[ -f "$input" && ! -L "$input" ]] || {
-          fail "Input image not found or not a regular file: $input" || return 1
-        }
-        forge_supported_extension "$input" || {
-          fail "Unsupported input image: $input" || return 1
-        }
-        FORGE_INPUTS+=("$(realpath -- "$input")")
+        if [[ ! -f "$input" || -L "$input" ]]; then
+          fail "Input image not found or not a regular file: $input. Supply an existing regular image file, not a symlink." || true
+          collection_status=1
+          continue
+        fi
+        if ! forge_supported_extension "$input"; then
+          fail "Unsupported input image: $input. Supply PNG, JPEG, WebP, TIFF, or GIF source images." || true
+          collection_status=1
+          continue
+        fi
+        if input_abs="$(realpath -- "$input")"; then
+          FORGE_INPUTS+=("$input_abs")
+        else
+          fail "Could not resolve input image: $input. Check that it still exists and is readable." || true
+          collection_status=1
+        fi
       done
     fi
   fi
 
-  for input_abs in "${FORGE_INPUTS[@]}"; do
-    forge_supported_extension "$input_abs" || {
-      fail "Unsupported input image: $input_abs" || return 1
-    }
+  for input_abs in "${FORGE_INPUTS[@]+"${FORGE_INPUTS[@]}"}"; do
+    if ! forge_supported_extension "$input_abs"; then
+      fail "Unsupported input image: $input_abs. Supply PNG, JPEG, WebP, TIFF, or GIF source images." || true
+      collection_status=1
+    fi
 
     if [[ -n "$root_abs" ]]; then
       relative_path="${input_abs#"$root_abs"/}"
@@ -310,9 +343,10 @@ forge_collect_inputs() {
       stem="${stem%.*}"
     fi
 
-    [[ -n "${stem##*/}" ]] || {
-      fail "Could not derive an output name for $input_abs" || return 1
-    }
+    if [[ -z "${stem##*/}" ]]; then
+      fail "Could not derive an output name for $input_abs. Rename the source to include a basename before its extension." || true
+      collection_status=1
+    fi
     FORGE_STEMS+=("$stem")
     FORGE_ICNS_TARGETS+=("$output_root/$stem.icns")
     FORGE_PNG_TARGETS+=("$output_root/$stem.png")
@@ -346,32 +380,47 @@ forge_collect_inputs() {
       FORGE_PNG_NOOPS+=(false)
     done
   fi
-  return 0
+  return "$collection_status"
 }
 
 forge_validate_target() {
   local target="$1"
   local canonical_target
   local canonical_input
+  local target_key
+  local input_key
+  local ancestor
 
   canonical_target="$(forge_canonical_destination "$target")" || {
-    fail "Could not resolve output destination: $target" || return 1
+    fail "Could not resolve output destination: $target. Check its parent directories and symlinks." || return 1
   }
+  target_key="$(forge_case_key "$canonical_target")" || return 1
 
   for canonical_input in "${FORGE_INPUTS[@]}"; do
     if [[ -e "$target" && "$target" -ef "$canonical_input" ]]; then
       return 10
     fi
-    if [[ "$(forge_case_key "$canonical_target")" == "$(forge_case_key "$canonical_input")" ]]; then
+    input_key="$(forge_case_key "$canonical_input")" || return 1
+    if [[ "$target_key" == "$input_key" ]]; then
       return 10
     fi
   done
 
   if [[ -L "$target" ]]; then
-    fail "Output target is a symlink and cannot be replaced: $target" || return 1
+    fail "Output target is a symlink and cannot be replaced: $target. Choose another output directory or remove the symlink yourself." || return 1
   fi
   if [[ -e "$target" && ! -f "$target" ]]; then
-    fail "Output target is not a regular file: $target" || return 1
+    fail "Output target is not a regular file: $target. Choose another output name or directory." || return 1
+  fi
+  ancestor="$(dirname "$target")"
+  while [[ ! -e "$ancestor" && ! -L "$ancestor" && "$ancestor" != / ]]; do
+    ancestor="$(dirname "$ancestor")"
+  done
+  if [[ ! -d "$ancestor" ]]; then
+    fail "Output ancestor is not a directory: $ancestor. Choose an output directory with valid directory ancestors." || return 1
+  fi
+  if [[ ! -w "$ancestor" || ! -x "$ancestor" ]]; then
+    fail "Output directory is not writable or searchable: $ancestor. Choose a writable output directory or correct its access permissions." || return 1
   fi
   return 0
 }
@@ -381,67 +430,87 @@ forge_preflight_manifest() {
   local index
   local input
   local target
+  local canonical_target
   local key
   local target_status
   local dimensions
   local width
   local height
+  local preflight_status=0
+  local processor_ready=true
+  local target_kind
   local -a planned_keys=()
+  local -a target_kinds=(icns)
 
+  [[ "$keep_png" != true ]] || target_kinds+=(png)
+  if ! require_processor; then
+    processor_ready=false
+    preflight_status=1
+  fi
   FORGE_EXISTING_TARGETS=()
   for ((index = 0; index < ${#FORGE_INPUTS[@]}; index++)); do
     input="${FORGE_INPUTS[$index]}"
-    dimensions="$("$ICONFORGE_PROCESSOR" info "$input" 2>/dev/null)" || {
-      fail "Could not decode input image: $input" || return 1
-    }
-    [[ "$dimensions" =~ ^[0-9]+x[0-9]+$ ]] || {
-      fail "Processor returned invalid dimensions for $input" || return 1
-    }
-    width="${dimensions%x*}"
-    height="${dimensions#*x}"
-    if [[ "$width" -lt 512 || "$height" -lt 512 ]]; then
-      warn "Source image is ${width}x${height}; macOS icons look best at 512x512 or larger: $input"
+    if [[ "$processor_ready" == false ]]; then
+      :
+    elif ! dimensions="$("$ICONFORGE_PROCESSOR" info "$input" 2>&1)"; then
+      fail "Could not decode input image: $input. Re-export it as a supported image and verify that the complete file is readable." || true
+      [[ -z "$dimensions" ]] || stderr "Processor diagnostic: $dimensions"
+      preflight_status=1
+    elif [[ ! "$dimensions" =~ ^[0-9]+x[0-9]+$ ]]; then
+      fail "Processor returned invalid dimensions for $input: $dimensions. Reinstall IconForge if a freshly exported image produces the same result." || true
+      preflight_status=1
+    else
+      width="${dimensions%x*}"
+      height="${dimensions#*x}"
+      if [[ "$width" -eq 0 || "$height" -eq 0 ]]; then
+        fail "Source image has an empty dimension: $input ($dimensions). Re-export it with nonzero width and height." || true
+        preflight_status=1
+      elif [[ "$width" -lt 512 || "$height" -lt 512 ]]; then
+        warn "Source image is ${width}x${height}; macOS icons look best at 512x512 or larger: $input"
+      fi
     fi
 
-    target="${FORGE_ICNS_TARGETS[$index]}"
-    key="$(forge_case_key "$(forge_canonical_destination "$target")")" || return 1
-    if forge_array_contains "$key" "${planned_keys[@]+"${planned_keys[@]}"}"; then
-      fail "Two inputs map to the same output: $target" || return 1
-    fi
-    planned_keys+=("$key")
-
-    forge_validate_target "$target"
-    target_status=$?
-    case "$target_status" in
-      0) [[ -e "$target" ]] && FORGE_EXISTING_TARGETS+=("$target") ;;
-      10) fail "Planned ICNS output would overwrite a selected input: $target" || return 1 ;;
-      *) return 1 ;;
-    esac
-
-    if [[ "$keep_png" == true ]]; then
-      target="${FORGE_PNG_TARGETS[$index]}"
-      key="$(forge_case_key "$(forge_canonical_destination "$target")")" || return 1
+    for target_kind in "${target_kinds[@]}"; do
+      if [[ "$target_kind" == icns ]]; then
+        target="${FORGE_ICNS_TARGETS[$index]}"
+      else
+        target="${FORGE_PNG_TARGETS[$index]}"
+      fi
+      if ! canonical_target="$(forge_canonical_destination "$target")"; then
+        fail "Could not resolve output destination: $target. Check its parent directories and symlinks." || true
+        preflight_status=1
+        continue
+      fi
+      if ! key="$(forge_case_key "$canonical_target")"; then
+        preflight_status=1
+        continue
+      fi
       if forge_array_contains "$key" "${planned_keys[@]+"${planned_keys[@]}"}"; then
-        fail "Two planned outputs map to the same path: $target" || return 1
+        fail "Two planned outputs map to the same path: $target. Rename the colliding inputs or use recursive mode to preserve their directories." || true
+        preflight_status=1
       fi
       planned_keys+=("$key")
 
-      forge_validate_target "$target"
-      target_status=$?
+      target_status=0
+      forge_validate_target "$target" || target_status=$?
       case "$target_status" in
-        0) [[ -e "$target" ]] && FORGE_EXISTING_TARGETS+=("$target") ;;
+        0) [[ ! -e "$target" ]] || FORGE_EXISTING_TARGETS+=("$target") ;;
         10)
-          if forge_is_png "$input" && [[ "$(realpath -- "$input")" == "$(forge_canonical_destination "$target")" ]]; then
+          if [[ "$target_kind" == png ]] && forge_is_png "$input" && [[ "$input" == "$canonical_target" ]]; then
             FORGE_PNG_NOOPS[index]=true
           else
-            fail "Planned PNG output would overwrite a selected input: $target" || return 1
+            fail "Planned output would overwrite a selected input: $target. Choose another output name or directory." || true
+            preflight_status=1
           fi
           ;;
-        *) return 1 ;;
+        *) preflight_status=1 ;;
       esac
-    fi
+    done
   done
-  return 0
+  if [[ "$preflight_status" -ne 0 ]]; then
+    note "Forge preflight found errors. No output files were written; resolve all reported input and destination problems before retrying."
+  fi
+  return "$preflight_status"
 }
 
 forge_confirm_overwrites() {
@@ -465,7 +534,7 @@ forge_confirm_overwrites() {
     stderr "  $target"
   done
 
-  if [[ ! -t 0 || ! -t 2 ]]; then
+  if [[ ! -t 0 || ( "${ICONFORGE_STDERR_IS_TTY:-false}" != true && ! -t 2 ) ]]; then
     fail "Existing outputs require -f/--force in noninteractive mode" || return 1
   fi
 
@@ -532,26 +601,36 @@ forge_stage_all() {
   local keep_png="$2"
   local index
   local item_dir
+  local stage_status=0
 
   FORGE_STAGE_ICNS=()
   FORGE_STAGE_PNG=()
   for ((index = 0; index < ${#FORGE_INPUTS[@]}; index++)); do
     [[ "${FORGE_INTERRUPT_STATUS:-0}" -eq 0 ]] || return 1
     item_dir="$stage_root/item-$index"
-    mkdir -p "$item_dir" || return 1
+    if ! mkdir -p "$item_dir"; then
+      fail "Could not create a staging directory for ${FORGE_INPUTS[$index]}. Check temporary disk space and directory access." || true
+      stage_status=1
+      continue
+    fi
     note "Forging ${FORGE_STEMS[$index]} ($((index + 1))/${#FORGE_INPUTS[@]})"
-    forge_generate_one "${FORGE_INPUTS[$index]}" "$item_dir" "$keep_png" "${FORGE_PNG_NOOPS[$index]}" || {
-      fail "Failed to forge ${FORGE_INPUTS[$index]}" || return 1
-    }
+    if ! forge_generate_one "${FORGE_INPUTS[$index]}" "$item_dir" "$keep_png" "${FORGE_PNG_NOOPS[$index]}"; then
+      fail "Failed to forge ${FORGE_INPUTS[$index]}. Review the processor diagnostic above; check source readability and available temporary disk space." || true
+      stage_status=1
+      continue
+    fi
     [[ "${FORGE_INTERRUPT_STATUS:-0}" -eq 0 ]] || return 1
-    FORGE_STAGE_ICNS+=("$item_dir/output.icns")
+    FORGE_STAGE_ICNS[index]="$item_dir/output.icns"
     if [[ "$keep_png" == true && "${FORGE_PNG_NOOPS[$index]}" != true ]]; then
-      FORGE_STAGE_PNG+=("$item_dir/output.png")
+      FORGE_STAGE_PNG[index]="$item_dir/output.png"
     else
-      FORGE_STAGE_PNG+=("")
+      FORGE_STAGE_PNG[index]=""
     fi
   done
-  return 0
+  if [[ "$stage_status" -ne 0 ]]; then
+    note "Forge generation found errors. No output files were published; the remaining independent inputs were checked."
+  fi
+  return "$stage_status"
 }
 
 forge_collect_missing_directories() {
@@ -601,7 +680,7 @@ forge_atomic_copy() {
     rm -f "$temporary"
     return 1
   fi
-  if ! "$ICONFORGE_NATIVE_ICON" rename-exact "$temporary" "$target" >/dev/null 2>&1; then
+  if ! "$ICONFORGE_NATIVE_ICON" rename-exact "$temporary" "$target" >/dev/null; then
     rm -f "$temporary"
     return 1
   fi
@@ -619,7 +698,7 @@ forge_atomic_copy_no_clobber() {
     rm -f "$temporary"
     return 1
   fi
-  if ! "$ICONFORGE_NATIVE_ICON" link-exclusive "$temporary" "$target" >/dev/null 2>&1; then
+  if ! "$ICONFORGE_NATIVE_ICON" link-exclusive "$temporary" "$target" >/dev/null; then
     rm -f "$temporary"
     return 1
   fi
@@ -632,6 +711,7 @@ forge_cleanup_stage_dir() {
   local temporary_root
 
   [[ -n "$stage_dir" && -d "$stage_dir" ]] || return 0
+  [[ "$stage_dir" != "${FORGE_RECOVERY_STAGE:-}" ]] || return 0
   [[ "$(basename "$stage_dir")" == iconforge-forge.* ]] || return 0
   stage_parent="$(realpath -- "$(dirname "$stage_dir")")" || return 0
   temporary_root="$(realpath -- "$(iconforge_temp_root)")" || return 0
@@ -682,9 +762,12 @@ forge_publish_all() {
     fi
   done
 
+  if ! forge_collect_missing_directories "$output_root" "${publish_targets[@]}" >"$stage_root/directories"; then
+    return 1
+  fi
   while IFS= read -r -d '' directory; do
-    [[ -n "$directory" ]] && planned_directories+=("$directory")
-  done < <(forge_collect_missing_directories "$output_root" "${publish_targets[@]}")
+    [[ -z "$directory" ]] || planned_directories+=("$directory")
+  done <"$stage_root/directories"
 
   for directory in "${planned_directories[@]+"${planned_directories[@]}"}"; do
     mkdir "$directory" || {
@@ -724,7 +807,7 @@ forge_publish_all() {
       fi
     else
       if ! forge_atomic_copy_no_clobber "$source" "$target"; then
-        fail "Output appeared after preflight; no files from this run will be kept: $target" || true
+        fail "Could not publish new output: $target. The destination may have appeared after preflight, or directory access or disk space may have changed. Rolling back outputs from this run." || true
         break
       fi
     fi
@@ -740,15 +823,24 @@ forge_publish_all() {
       target="${published_targets[$index]}"
       backup="${backups[$index]:-}"
       if [[ -n "$backup" ]]; then
-        forge_atomic_copy "$backup" "$target" || rollback_failed=true
+        if ! forge_atomic_copy "$backup" "$target"; then
+          fail "Could not restore original output: $target. Its recovery copy is $backup. Restore it after correcting destination access or disk space." || true
+          rollback_failed=true
+        fi
       else
-        rm -f "$target" || rollback_failed=true
+        if ! rm -f "$target"; then
+          fail "Could not remove new output during rollback: $target. Remove this incomplete-run output after correcting directory access." || true
+          rollback_failed=true
+        fi
       fi
     done
     for ((index = ${#created_directories[@]} - 1; index >= 0; index--)); do
       rmdir "${created_directories[$index]}" 2>/dev/null || true
     done
-    [[ "$rollback_failed" == false ]] || warn "Output rollback was incomplete; inspect the reported destinations"
+    if [[ "$rollback_failed" == true ]]; then
+      FORGE_RECOVERY_STAGE="$stage_root"
+      warn "Output rollback was incomplete. Recovery files are preserved at $stage_root; do not remove them until every reported destination is restored."
+    fi
     return 1
   fi
 
@@ -790,10 +882,13 @@ cmd_forge() {
   local saved_hup_trap
   local saved_int_trap
   local saved_term_trap
+  local preflight_status=0
+  local collection_status=0
   local -a operands=()
 
   forge_reset_manifest
   FORGE_INTERRUPT_STATUS=0
+  FORGE_RECOVERY_STAGE=""
 
   while [[ $# -gt 0 ]]; do
     if [[ "$parse_options" == true ]]; then
@@ -830,12 +925,18 @@ cmd_forge() {
   output_root="$(forge_canonical_destination "$output_dir")" || {
     fail "Could not resolve output directory: $output_dir" || return 1
   }
-  forge_collect_inputs "$recursive" "$output_root" ${operands[@]+"${operands[@]}"} || return $?
+  forge_collect_inputs "$recursive" "$output_root" ${operands[@]+"${operands[@]}"} || collection_status=$?
+  [[ "$collection_status" -ne 2 ]] || return 2
+  [[ "$collection_status" -eq 0 ]] || preflight_status=1
   if [[ -e "$output_root" && ! -d "$output_root" ]]; then
-    fail "Output path is not a directory: $output_root" || return 1
+    fail "Output path is not a directory: $output_root. Choose a directory for --output." || true
+    preflight_status=1
   fi
-  require_processor || return 1
-  forge_preflight_manifest "$keep_png" || return 1
+  forge_preflight_manifest "$keep_png" || preflight_status=1
+  if [[ "$preflight_status" -ne 0 ]]; then
+    note "No output files were written. Resolve all reported errors and retry the forge command."
+    return 1
+  fi
   forge_confirm_overwrites "$force" "$dry_run" || return 1
 
   if [[ "$dry_run" == true ]]; then

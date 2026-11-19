@@ -113,16 +113,21 @@ config_key() {
 }
 
 config_read_document() {
-  local config_file root_type
+  local config_file root_type plist_diagnostics
   CONFIG_XML=""
   config_file="$(iconforge_config_file)" || return 1
   [[ -e "$config_file" || -L "$config_file" ]] || return 0
   config_validate_file_for_read "$config_file" || return 1
   require_tool /usr/bin/plutil "Missing required tool: plutil" || return 1
   require_tool /usr/bin/xmllint "Missing required tool: xmllint" || return 1
-  /usr/bin/plutil -lint "$config_file" >/dev/null 2>&1 || { fail "IconForge configuration is not a valid property list: $config_file"; return 1; }
-  CONFIG_XML="$(/usr/bin/plutil -convert xml1 -o - "$config_file" 2>/dev/null)" || { fail "Could not decode IconForge configuration: $config_file"; return 1; }
-  root_type="$(/usr/bin/xmllint --nonet --xpath 'name(/plist/*[1])' - <<< "$CONFIG_XML" 2>/dev/null)" || return 1
+  if ! plist_diagnostics="$(/usr/bin/plutil -lint "$config_file" 2>&1)"; then
+    [[ -z "$plist_diagnostics" ]] || note "$plist_diagnostics"
+    fail "IconForge configuration is not a valid property list: $config_file" || true
+    remedy "Inspect and repair the preference file before retrying. An explicit output or icon path can bypass unrelated preferences."
+    return 1
+  fi
+  CONFIG_XML="$(/usr/bin/plutil -convert xml1 -o - "$config_file")" || { fail "Could not decode IconForge configuration: $config_file"; return 1; }
+  root_type="$(/usr/bin/xmllint --nonet --xpath 'name(/plist/*[1])' - <<< "$CONFIG_XML")" || { fail "Could not inspect IconForge configuration: $config_file"; return 1; }
   [[ "$root_type" == dict ]] || { fail "IconForge configuration root must be a dictionary: $config_file"; return 1; }
 }
 
@@ -236,7 +241,11 @@ config_write_directory() (
 config_set_default_directory() { config_write_directory set default-directory "$1"; }
 config_get_default_directory() {
   load_iconforge_config || return 1
-  [[ "$ICONFORGE_HAS_DEFAULT_DIRECTORY" == true ]] || { note "Default icon directory is not set"; return 1; }
+  if [[ "$ICONFORGE_HAS_DEFAULT_DIRECTORY" != true ]]; then
+    note "Default icon directory is not set"
+    remedy "Set a default-directory with iconforge config set, or supply a directory explicitly."
+    return 1
+  fi
   printf '%s\n' "$ICONFORGE_DEFAULT_DIRECTORY"
 }
 config_unset_default_directory() { config_write_directory unset default-directory; }

@@ -69,6 +69,32 @@ STATUS=$?
 set -e
 [[ "$STATUS" -ne 0 && "$MATCH_STATUS" == ambiguous-partial ]] || { test_fail "Ambiguous partial did not fail closed"; exit 1; }
 
+# App names are normalized once when the inventory is built, rather than once
+# per application for every icon in a bulk request.
+REAL_HELPER="$ICONFORGE_NATIVE_ICON"
+COUNTING_HELPER="$PWD/$TEST_DIR/counting-helper"
+export ICONFORGE_TEST_REAL_NORMALIZER="$REAL_HELPER"
+export ICONFORGE_TEST_NORMALIZATION_LOG="$PWD/$TEST_DIR/normalization-calls"
+cat >"$COUNTING_HELPER" <<'HELPER'
+#!/usr/bin/env bash
+[[ "$1" != normalize ]] || printf 'normalize\n' >>"$ICONFORGE_TEST_NORMALIZATION_LOG"
+exec "$ICONFORGE_TEST_REAL_NORMALIZER" "$@"
+HELPER
+chmod +x "$COUNTING_HELPER"
+ICONFORGE_NATIVE_ICON="$COUNTING_HELPER"
+: >"$ICONFORGE_TEST_NORMALIZATION_LOG"
+match_application_name 'Visual Studio Code'
+match_application_name 'café'
+if match_application_name 'No matching application'; then
+  test_fail "Unexpected match for a missing application"; exit 1
+fi
+[[ "$(wc -l <"$ICONFORGE_TEST_NORMALIZATION_LOG" | tr -d ' ')" -eq 3 ]] || {
+  test_fail "Matching re-normalized the discovered applications"; exit 1
+}
+ICONFORGE_NATIVE_ICON="$REAL_HELPER"
+unset ICONFORGE_TEST_REAL_NORMALIZER ICONFORGE_TEST_NORMALIZATION_LOG
+test_pass "Repeated matches reuse the normalized application inventory"
+
 set +e
 resolve_app_path "café" >"$TEST_DIR/output.log" 2>&1
 STATUS=$?
@@ -107,6 +133,18 @@ grep -F "Multiple installed applications share this exact match" "$TEST_DIR/dupl
 }
 ICONFORGE_TEST_USER_APPLICATIONS_DIR="$EMPTY"
 
+DUPLICATE_ID_ROOT="$PWD/$TEST_DIR/duplicate-id-apps"
+create_app "$DUPLICATE_ID_ROOT/Other Editor.app" com.example.code "Other Editor"
+ICONFORGE_TEST_USER_APPLICATIONS_DIR="$DUPLICATE_ID_ROOT"
+discover_applications
+if match_application_name 'Visual Studio Code'; then
+  test_fail "A duplicate bundle identifier unexpectedly resolved"; exit 1
+fi
+[[ "$MATCH_STATUS" == ambiguous-exact && "${#MATCH_CANDIDATES[@]}" -eq 2 ]] || {
+  test_fail "Duplicate bundle identifiers were not reported as ambiguous"; exit 1
+}
+ICONFORGE_TEST_USER_APPLICATIONS_DIR="$EMPTY"
+
 set +e
 resolve_app_path "Missing.app" >"$TEST_DIR/output.log" 2>&1
 STATUS=$?
@@ -126,5 +164,94 @@ grep -F "App bundle not found or invalid" "$TEST_DIR/output.log" >/dev/null || {
   test_fail "Missing explicit app path was not treated as a path"
   exit 1
 }
+
+FAILED_ROOT_ONE="$PWD/$TEST_DIR/failed-one"
+FAILED_ROOT_TWO="$PWD/$TEST_DIR/failed-two"
+SCAN_LOG="$PWD/$TEST_DIR/scans.log"
+mkdir -p "$FAILED_ROOT_ONE" "$FAILED_ROOT_TWO"
+ICONFORGE_TEST_CURRENT_APPLICATIONS_DIR="$FAILED_ROOT_ONE"
+ICONFORGE_TEST_USER_APPLICATIONS_DIR="$FAILED_ROOT_TWO"
+ICONFORGE_TEST_APPLICATIONS_DIR="$ROOT"
+ICONFORGE_TEST_SYSTEM_APPLICATIONS_DIR="$PWD/$TEST_DIR/optional-missing"
+find() {
+  printf '%s\n' "$1" >>"$SCAN_LOG"
+  case "$1" in
+    "$FAILED_ROOT_ONE")
+      printf '%s\n' "$ROOT/Visual Studio Code.app"
+      printf 'find: first root scan failed after partial output\n' >&2
+      return 13
+      ;;
+    "$FAILED_ROOT_TWO")
+      printf 'find: second root scan failed independently\n' >&2
+      return 5
+      ;;
+    *) command find "$@" ;;
+  esac
+}
+STATUS=0
+discover_applications >"$TEST_DIR/scan-output.log" 2>&1 || STATUS=$?
+[[ "$STATUS" -ne 0 && "${#DISCOVERED_APP_RECORDS[@]}" -eq 0 ]] || {
+  test_fail "An incomplete scan exposed partial application records"
+  exit 1
+}
+for expected in 'first root scan failed' 'second root scan failed' "$FAILED_ROOT_ONE" "$FAILED_ROOT_TWO" 'Remedy:'; do
+  grep -F "$expected" "$TEST_DIR/scan-output.log" >/dev/null || {
+    test_fail "Independent discovery failure omitted $expected"
+    exit 1
+  }
+done
+grep -Fx "$ROOT" "$SCAN_LOG" >/dev/null || { test_fail "Discovery did not scan the later readable root"; exit 1; }
+STATUS=0
+resolve_app_path 'Visual Studio Code' >"$TEST_DIR/incomplete.stdout" 2>"$TEST_DIR/incomplete.stderr" || STATUS=$?
+[[ "$STATUS" -ne 0 && ! -s "$TEST_DIR/incomplete.stdout" ]] || {
+  test_fail "A name resolved successfully from an incomplete application inventory"
+  exit 1
+}
+if grep -F 'Could not resolve app bundle' "$TEST_DIR/incomplete.stderr"; then
+  test_fail "A scan failure was misreported as an application-name lookup failure"
+  exit 1
+fi
+cp "$SCAN_LOG" "$TEST_DIR/scans-before-explicit.log"
+[[ "$(resolve_app_path "$ROOT/Visual Studio Code.app")" == "$ROOT/Visual Studio Code.app" ]] || {
+  test_fail "An explicit app path failed because another search root was unreadable"
+  exit 1
+}
+cmp "$TEST_DIR/scans-before-explicit.log" "$SCAN_LOG" || { test_fail "An explicit app path invoked discovery"; exit 1; }
+unset -f find
+ICONFORGE_TEST_CURRENT_APPLICATIONS_DIR="$ROOT"
+ICONFORGE_TEST_USER_APPLICATIONS_DIR="$EMPTY"
+ICONFORGE_TEST_APPLICATIONS_DIR="$EMPTY"
+discover_applications 2>"$TEST_DIR/optional-root.stderr"
+[[ "${#DISCOVERED_APP_RECORDS[@]}" -eq 5 && ! -s "$TEST_DIR/optional-root.stderr" ]] || {
+  test_fail "A missing optional search root caused a discovery error"
+  exit 1
+}
+test_pass "Discovery collects independent scan failures and rejects incomplete inventories"
+
+REAL_NATIVE_HELPER="$ICONFORGE_NATIVE_ICON"
+ICONFORGE_NATIVE_ICON="$PWD/$TEST_DIR/normalization-helper"
+cat >"$ICONFORGE_NATIVE_ICON" <<'HELPER'
+#!/usr/bin/env bash
+printf 'unusable partial normalization\n'
+printf 'native normalization failed intentionally\n' >&2
+exit 17
+HELPER
+chmod +x "$ICONFORGE_NATIVE_ICON"
+NORMALIZED="$(normalize_match_token 'Visual_Studio-Code.app' 2>"$TEST_DIR/normalization.stderr")"
+[[ "$NORMALIZED" == 'visual studio code' ]] || { test_fail "A failed normalizer did not use the fallback"; exit 1; }
+for expected in 'native normalization failed intentionally' 'Warning:' 'Remedy:'; do
+  grep -F "$expected" "$TEST_DIR/normalization.stderr" >/dev/null || { test_fail "Normalization failure omitted $expected"; exit 1; }
+done
+cat >"$ICONFORGE_NATIVE_ICON" <<'HELPER'
+#!/usr/bin/env bash
+exit 0
+HELPER
+NORMALIZED="$(normalize_match_token '---' 2>"$TEST_DIR/normalization.stderr")"
+[[ -z "$NORMALIZED" && ! -s "$TEST_DIR/normalization.stderr" ]] || {
+  test_fail "A successful empty normalization was reported as a helper failure"
+  exit 1
+}
+ICONFORGE_NATIVE_ICON="$REAL_NATIVE_HELPER"
+test_pass "Normalization preserves helper errors while accepting valid empty output"
 
 test_pass "$TEST_NAME passed"

@@ -3,8 +3,18 @@
 # Records are tab-separated: path, bundle id, display name, bundle name,
 # filename. This keeps the data model portable to macOS's system Bash.
 DISCOVERED_APP_RECORDS=()
+DISCOVERED_APP_BUNDLE_IDS=()
+DISCOVERED_APP_FILE_KEYS=()
+DISCOVERED_APP_DISPLAY_KEYS=()
+DISCOVERED_APP_BUNDLE_KEYS=()
 
-discovery_reset() { DISCOVERED_APP_RECORDS=(); }
+discovery_reset() {
+  DISCOVERED_APP_RECORDS=()
+  DISCOVERED_APP_BUNDLE_IDS=()
+  DISCOVERED_APP_FILE_KEYS=()
+  DISCOVERED_APP_DISPLAY_KEYS=()
+  DISCOVERED_APP_BUNDLE_KEYS=()
+}
 
 normalize_match_token_fallback() {
   printf '%s\n' "$1" | tr '[:upper:]' '[:lower:]' |
@@ -15,7 +25,11 @@ normalize_match_token() {
   local raw_value="$1" normalized=""
   # One native Unicode-normalization implementation for direct and bulk apply.
   if [[ -x "${ICONFORGE_NATIVE_ICON:-}" ]]; then
-    normalized="$("$ICONFORGE_NATIVE_ICON" normalize "$raw_value" 2>/dev/null || true)"
+    if ! normalized="$("$ICONFORGE_NATIVE_ICON" normalize "$raw_value")"; then
+      warn "Native application-name normalization failed; using the locale-aware fallback."
+      remedy "Rebuild or reinstall the native helper to restore Unicode normalization, or use an exact application path."
+      normalized=""
+    fi
   fi
   if [[ -n "$normalized" ]]; then printf '%s\n' "$normalized"; else normalize_match_token_fallback "$raw_value"; fi
 }
@@ -23,7 +37,10 @@ normalize_match_token() {
 discovery_add_record() {
   local app_path="$1" existing existing_path info_plist="$1/Contents/Info.plist"
   local bundle_id display_name bundle_name file_name
-  app_path="$(realpath -- "$app_path")" || return 1
+  local file_key display_key="" bundle_key=""
+  app_path="$(realpath -- "$app_path")" || {
+    fail "Could not resolve a discovered application path: $1" || return 1
+  }
   for existing in "${DISCOVERED_APP_RECORDS[@]+"${DISCOVERED_APP_RECORDS[@]}"}"; do
     existing_path="${existing%%$'\t'*}"
     [[ "$existing_path" == "$app_path" ]] && return 0
@@ -32,7 +49,20 @@ discovery_add_record() {
   display_name="$(plist_string "$info_plist" ':CFBundleDisplayName')"
   bundle_name="$(plist_string "$info_plist" ':CFBundleName')"
   file_name="$(basename "$app_path")"
+  # Cache normalized names once per inventory. Bulk apply can then match each
+  # icon without spawning a normalizer for every app and every icon.
+  file_key="$(normalize_match_token "$file_name")" || return 1
+  [[ -z "$display_name" ]] || display_key="$(normalize_match_token "$display_name")" || return 1
+  if [[ "$bundle_name" == "$display_name" ]]; then
+    bundle_key="$display_key"
+  elif [[ -n "$bundle_name" ]]; then
+    bundle_key="$(normalize_match_token "$bundle_name")" || return 1
+  fi
   DISCOVERED_APP_RECORDS+=("$app_path"$'\t'"$bundle_id"$'\t'"$display_name"$'\t'"$bundle_name"$'\t'"$file_name")
+  DISCOVERED_APP_BUNDLE_IDS+=("$bundle_id")
+  DISCOVERED_APP_FILE_KEYS+=("$file_key")
+  DISCOVERED_APP_DISPLAY_KEYS+=("$display_key")
+  DISCOVERED_APP_BUNDLE_KEYS+=("$bundle_key")
 }
 
 discover_applications() {
@@ -44,15 +74,28 @@ discover_applications() {
     "${ICONFORGE_TEST_CORE_SERVICES_DIR:-/System/Library/CoreServices}"
     "${ICONFORGE_EXTRA_APPLICATION_ROOTS[@]+"${ICONFORGE_EXTRA_APPLICATION_ROOTS[@]}"}"
   )
-  local search_root app_path
+  local search_root app_path scan_output
+  local scan_failed=false
+
   discovery_reset
   for search_root in "${search_roots[@]}"; do
     [[ -d "$search_root" ]] || continue
+    if ! scan_output="$(set -o pipefail; find "$search_root" -mindepth 1 -maxdepth 2 -type d -iname '*.app' -prune -print | sort)"; then
+      fail "Could not completely scan applications under: $search_root" || true
+      scan_failed=true
+      continue
+    fi
     while IFS= read -r app_path; do
-      [[ -f "$app_path/Contents/Info.plist" ]] || continue
-      discovery_add_record "$app_path"
-    done < <(find "$search_root" -mindepth 1 -maxdepth 2 -type d -iname '*.app' -prune -print 2>/dev/null | sort)
+      [[ -n "$app_path" && -f "$app_path/Contents/Info.plist" ]] || continue
+      discovery_add_record "$app_path" || scan_failed=true
+    done <<<"$scan_output"
   done
+  if [[ "$scan_failed" == true ]]; then
+    discovery_reset
+    remedy "Resolve the reported application-directory scan errors and retry, or supply an exact application path. Incomplete discovery results were discarded."
+    return 1
+  fi
+  return 0
 }
 
 discovered_app_field() { printf '%s\n' "$1" | awk -F '\t' -v index="$2" '{print $index}'; }

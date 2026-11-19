@@ -43,4 +43,38 @@ for rejected_root in "$TEST_DIR/.hidden-root" "$TEST_DIR/Icons.APP" "$TEST_DIR/I
   [[ "${#ICON_LIBRARY_FILES[@]}" -eq 0 ]] || { test_fail "Rejected root retained an icon manifest"; exit 1; }
 done
 
+
+# An incomplete traversal must never be presented as a complete matching manifest.
+(
+  find() {
+    printf '%s\0' "$ROOT/Café Studio.icns"
+    printf 'Injected traversal failure for a protected child\n' >&2
+    return 1
+  }
+  if scan_icon_library "$ROOT" >"$TEST_DIR/incomplete-scan.log" 2>&1; then
+    test_fail "An incomplete icon library scan unexpectedly succeeded"
+    exit 1
+  fi
+  [[ "${#ICON_LIBRARY_FILES[@]}" -eq 0 ]] || {
+    test_fail "An incomplete library scan retained a partial matching manifest"
+    exit 1
+  }
+  grep -F 'Injected traversal failure' "$TEST_DIR/incomplete-scan.log" >/dev/null || {
+    test_fail "Library scan hid the underlying traversal error"
+    exit 1
+  }
+  grep -F 'No applications will be modified' "$TEST_DIR/incomplete-scan.log" >/dev/null || {
+    test_fail "Library scan omitted its safety boundary"
+    exit 1
+  }
+)
+
+newline_icon=$'Line\nBreak.icns'
+cp "$VALID" "$ROOT/$newline_icon"
+scan_icon_library "$ROOT"
+[[ "${#ICON_LIBRARY_FILES[@]}" -eq 3 ]] || {
+  test_fail "A newline in an icon filename broke the matching manifest"
+  exit 1
+}
+
 test_pass "$TEST_NAME passed"

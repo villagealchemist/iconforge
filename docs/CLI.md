@@ -1,8 +1,8 @@
 # IconForge: forge, hearth, apply
 
-This is the public CLI contract for IconForge 2.2.0.
-The application backend remains macOS-only. This work changes user-facing
-configuration and orchestration, not the Go image processor or AppKit helper.
+This is the public CLI contract for IconForge 2.3.0. The application backend
+remains macOS-only. This release improves diagnostics, recovery, and application
+matching while retaining the forge and hearth configuration introduced in 2.2.0.
 
 ## A library that fits your filesystem
 
@@ -151,7 +151,35 @@ Root `-v` remains version; apply `-v` remains verbose. Existing exit codes remai
 0 for success, 1 for resolution/validation/execution failure, and 2 for invalid
 usage. Existing bulk skip/partial-success semantics remain unchanged.
 
-## Diagnostics and completion
+## Diagnostics and recovery
+
+Bulk apply names unmatched icons, failed entries, and apps that need authorization
+even without `--verbose`. It continues with other eligible apps after an isolated
+application failure. The final summary separates successful changes from entries
+that still need attention. `--verbose` also prints the status of each successful
+entry. A dry run reports what needs attention without modifying applications.
+
+For an app the current user cannot write, IconForge skips the app, shows the path
+and read-only diagnostic facts, and prints a command for one native helper
+operation. It does not run `sudo` or request authorization itself. Resolve a
+locked file or read-only volume first; administrator access does not override
+those conditions. After an authorized helper operation, run `iconforge nuke` as
+the current user if a cache refresh is needed. Do not run the whole CLI as root.
+
+If AppKit reports a failure but the filesystem checks do not identify a cause,
+IconForge says the cause is unknown. A cache refresh cannot repair missing icon
+data. For a failed rollback, IconForge reports the locations of any recovery
+copies that must be retained until the affected destinations are restored.
+
+The CLI captures each invocation in a private temporary diagnostic report. Clean
+successes remove the report; failed runs, warnings, and remedies retain it and
+print its path. The report includes command arguments, paths, system and runtime
+details, output, and the exit status. Review it for private information before
+sharing. Temporary directories can be cleared by macOS, so copy a report if it
+needs to be retained. Capture failures are reported without hiding the command's
+original status.
+
+## Doctor and completion
 
 ```bash
 iconforge doctor

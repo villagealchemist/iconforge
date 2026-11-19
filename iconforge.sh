@@ -12,6 +12,8 @@ ICONFORGE_ROOT="$SCRIPT_DIR"
 
 # shellcheck source=lib/iconforge/common.sh
 source "$SCRIPT_DIR/lib/iconforge/common.sh"
+# shellcheck source=lib/iconforge/diagnostics.sh
+source "$SCRIPT_DIR/lib/iconforge/diagnostics.sh"
 # shellcheck source=lib/iconforge/config.sh
 source "$SCRIPT_DIR/lib/iconforge/config.sh"
 # shellcheck source=lib/iconforge/forge.sh
@@ -156,4 +158,6 @@ main() {
       ;;
   esac
 }
+
+diagnostics_start "$@"
 main "$@"

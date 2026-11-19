@@ -23,50 +23,38 @@ match_add_candidate() {
 
 match_expand_duplicate_bundle_id() {
   local bundle_id=""
-  local record
+  local index
   [[ "${#MATCH_CANDIDATES[@]}" -eq 1 ]] || return 0
-  bundle_id="$(discovered_app_bundle_id "${MATCH_CANDIDATES[0]}")"
+  for ((index = 0; index < ${#DISCOVERED_APP_RECORDS[@]}; index++)); do
+    [[ "${DISCOVERED_APP_RECORDS[$index]}" == "${MATCH_CANDIDATES[0]}" ]] || continue
+    bundle_id="${DISCOVERED_APP_BUNDLE_IDS[$index]}"
+    break
+  done
   [[ -n "$bundle_id" ]] || return 0
-  for record in "${DISCOVERED_APP_RECORDS[@]+"${DISCOVERED_APP_RECORDS[@]}"}"; do
-    [[ "$(discovered_app_bundle_id "$record")" == "$bundle_id" ]] || continue
-    match_add_candidate "$record"
+  for ((index = 0; index < ${#DISCOVERED_APP_RECORDS[@]}; index++)); do
+    [[ "${DISCOVERED_APP_BUNDLE_IDS[$index]}" == "$bundle_id" ]] || continue
+    match_add_candidate "${DISCOVERED_APP_RECORDS[$index]}"
   done
 }
 
 record_matches_normalized_token_exact() {
-  local record="$1"
-  local token="$2"
-  local value
-  for value in \
-    "$(discovered_app_file_name "$record")" \
-    "$(discovered_app_display_name "$record")" \
-    "$(discovered_app_bundle_name "$record")"; do
-    [[ -n "$value" ]] || continue
-    [[ "$(normalize_match_token "$value")" == "$token" ]] && return 0
-  done
-  return 1
+  local index="$1" token="$2"
+  [[ "${DISCOVERED_APP_FILE_KEYS[$index]}" == "$token" ||
+     "${DISCOVERED_APP_DISPLAY_KEYS[$index]}" == "$token" ||
+     "${DISCOVERED_APP_BUNDLE_KEYS[$index]}" == "$token" ]]
 }
 
 record_matches_normalized_token_partial() {
-  local record="$1"
-  local token="$2"
-  local value
-  local normalized_value
-  for value in \
-    "$(discovered_app_file_name "$record")" \
-    "$(discovered_app_display_name "$record")" \
-    "$(discovered_app_bundle_name "$record")"; do
-    [[ -n "$value" ]] || continue
-    normalized_value="$(normalize_match_token "$value")"
-    [[ -n "$normalized_value" && "$normalized_value" == *"$token"* ]] && return 0
-  done
-  return 1
+  local index="$1" token="$2"
+  [[ "${DISCOVERED_APP_FILE_KEYS[$index]}" == *"$token"* ||
+     "${DISCOVERED_APP_DISPLAY_KEYS[$index]}" == *"$token"* ||
+     "${DISCOVERED_APP_BUNDLE_KEYS[$index]}" == *"$token"* ]]
 }
 
 match_application_name() {
   local requested="$1"
   local token
-  local record
+  local index
 
   match_reset
   token="$(normalize_match_token "$requested")"
@@ -76,9 +64,9 @@ match_application_name() {
     return 1
   fi
 
-  for record in "${DISCOVERED_APP_RECORDS[@]+"${DISCOVERED_APP_RECORDS[@]}"}"; do
-    record_matches_normalized_token_exact "$record" "$token" || continue
-    match_add_candidate "$record"
+  for ((index = 0; index < ${#DISCOVERED_APP_RECORDS[@]}; index++)); do
+    record_matches_normalized_token_exact "$index" "$token" || continue
+    match_add_candidate "${DISCOVERED_APP_RECORDS[$index]}"
   done
   match_expand_duplicate_bundle_id
 
@@ -96,9 +84,9 @@ match_application_name() {
       ;;
   esac
 
-  for record in "${DISCOVERED_APP_RECORDS[@]+"${DISCOVERED_APP_RECORDS[@]}"}"; do
-    record_matches_normalized_token_partial "$record" "$token" || continue
-    match_add_candidate "$record"
+  for ((index = 0; index < ${#DISCOVERED_APP_RECORDS[@]}; index++)); do
+    record_matches_normalized_token_partial "$index" "$token" || continue
+    match_add_candidate "${DISCOVERED_APP_RECORDS[$index]}"
   done
   match_expand_duplicate_bundle_id
 
@@ -128,7 +116,7 @@ print_match_candidates() {
 }
 
 iconforge_input_is_tty() {
-  [[ -t 0 && -t 2 ]]
+  [[ -t 0 && ( "${ICONFORGE_STDERR_IS_TTY:-false}" == true || -t 2 ) ]]
 }
 
 confirm_app_suggestion() {
@@ -170,7 +158,7 @@ resolve_app_path() {
       ;;
   esac
 
-  discover_applications
+  discover_applications || return 1
   if match_application_name "$input"; then
     record="$MATCH_RECORD"
     if [[ "$MATCH_STATUS" == "matched-partial" ]]; then

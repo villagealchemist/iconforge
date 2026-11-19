@@ -2,6 +2,23 @@
 
 All notable user-facing changes to IconForge are recorded here.
 
+## 2.3.0
+
+### Error handling and recovery
+
+- Reuse normalized application names across bulk matches to reduce repeated helper launches.
+- Report affected applications and actionable authorization guidance during bulk apply, even without verbose output.
+- Collect independent input, decoding, destination, matching, and prerequisite failures with affected paths and remedies.
+  Continue eligible bulk app operations after an isolated failure and report completed work separately.
+- Preserve underlying tool errors and helper exit statuses. Retain a private local report for failed runs, warnings,
+  and unresolved entries, including command context and the final exit status.
+- Keep image publication transactional, and retain recovery copies with their locations when rollback cannot complete.
+- Diagnose native icon failures using observed volume, access, file-type, and locked-file facts. Print a scoped
+  administrator command when appropriate, and state when AppKit does not expose a cause.
+- Verify a decodable Finder icon resource after native writes instead of accepting an empty payload or stale flag.
+  Reuse the validated source image for the write and save standalone native-helper failure reports.
+- Preserve interactive prompts and transaction cleanup while capturing diagnostics, including interrupted runs.
+
 ## 2.2.0
 
 ### Configuration and application lookup

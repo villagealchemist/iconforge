@@ -17,6 +17,15 @@ export ICONFORGE_TEST_USER_APPLICATIONS_DIR="$EMPTY"
 export ICONFORGE_TEST_APPLICATIONS_DIR="$EMPTY"
 export ICONFORGE_TEST_SYSTEM_APPLICATIONS_DIR="$EMPTY"
 export ICONFORGE_TEST_CORE_SERVICES_DIR="$EMPTY"
+export ICONFORGE_TEST_DARWIN_CACHE="$BASE/darwin-cache"
+export ICONFORGE_GETCONF_BIN="$BASE/getconf"
+mkdir -p "$ICONFORGE_TEST_DARWIN_CACHE"
+cat >"$ICONFORGE_GETCONF_BIN" <<'GETCONF'
+#!/usr/bin/env bash
+[[ "$1" == DARWIN_USER_CACHE_DIR ]] || exit 1
+printf '%s\n' "$ICONFORGE_TEST_DARWIN_CACHE"
+GETCONF
+chmod +x "$ICONFORGE_GETCONF_BIN"
 
 assert_contains() { grep -F -- "$1" "$OUTPUT" >/dev/null || { test_fail "Missing output: $1"; cat "$OUTPUT"; exit 1; }; }
 assert_status() {
@@ -48,7 +57,7 @@ assert_contains 'Planned Nuke'
 assert_status 0 apply --all --dry-run --nuke
 assert_contains 'Would apply: 1'
 # Dry runs must not leave a Finder custom icon.
-if "$PWD/iconforge-native-icon/iconforge-native-icon" present "$APPS/Firefox.app"; then
+if ICONFORGE_DIAGNOSTIC_CAPTURE=1 "$PWD/iconforge-native-icon/iconforge-native-icon" present "$APPS/Firefox.app"; then
   test_fail 'Dry-run mutated the app'; exit 1
 fi
 # Real writes are limited to a disposable fixture, with no real cache clearing.

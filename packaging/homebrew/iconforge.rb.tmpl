@@ -81,6 +81,22 @@ class Iconforge < Formula
     PLIST
     assert_match (hearth/"HearthTest.icns").to_s,
                  shell_output("#{bin}/iconforge apply #{app} --dry-run")
+    search_roots = %w[
+      ICONFORGE_TEST_CURRENT_APPLICATIONS_DIR ICONFORGE_TEST_USER_APPLICATIONS_DIR
+      ICONFORGE_TEST_APPLICATIONS_DIR ICONFORGE_TEST_SYSTEM_APPLICATIONS_DIR
+      ICONFORGE_TEST_CORE_SERVICES_DIR
+    ]
+    ENV[search_roots.first] = testpath.to_s
+    search_roots.drop(1).each { |key| ENV[key] = (testpath/"no-other-apps").to_s }
+    app.chmod 0555
+    begin
+      output = shell_output("#{bin}/iconforge apply --all --from #{hearth} --dry-run 2>&1", 1)
+      assert_match "Needs authorization: 1", output
+      assert_match "Native icon write needs authorization: #{app.realpath}", output
+    ensure
+      app.chmod 0755
+      search_roots.each { |key| ENV.delete key }
+    end
     assert_match "Backend: macos", shell_output("#{bin}/iconforge capabilities")
     assert_match processor.to_s, shell_output("#{bin}/iconforge doctor")
     assert_match "_iconforge_complete", shell_output("#{bin}/iconforge completion bash")
